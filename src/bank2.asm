@@ -757,7 +757,7 @@ alt_graphic_data_04:
 
 ; ensure player sprite attributes continue to animate while paused
 set_players_paused_sprite_attr:
-    ldx #$01 ; x = #$01
+    ldx MAX_PLAYER_INDEX ; start with last player
 
 @loop:
     jsr set_player_paused_sprite_attr
@@ -846,19 +846,21 @@ set_player_paused_sprite_attr:
 ; determine sprite palette based on player index
 ; first byte is player 1
 ; second byte is player 2
+; 4-player hack: p3 forces palette 0 (all blue), p4 uses the p1 tile palettes, which
+; the sprite renderer swaps for sprite slot 3 (blue torso, red legs)
 sprite_attr_start_tbl:
-    .byte $00,$05
+    .byte $00,$05,$04,$00
 
 ; first byte is player 1 effect xor value
 ; second byte is player 2 effect xor value
 player_effect_xor_tbl:
-    .byte $00,$ff
+    .byte $00,$ff,$00,$ff
 
 .ifdef Probotector
 ; first byte is player 1
 ; second byte is player 2
 probotector_sprite_palette:
-    .byte $04,$05
+    .byte $04,$05,$04,$05
 .endif
 
 set_player_sprite:
@@ -2144,7 +2146,7 @@ create_default_soldiers:
 player_edge_check:
     tya                             ; need to save current value of y temporarily to restore after method
     pha                             ; temporarily save current value of a to stack
-    ldy #$01                        ; set y to start with player 2 for gen_soldier_right_side
+    ldy MAX_PLAYER_INDEX            ; set y to start with last player for gen_soldier_right_side
     jsr get_soldier_gen_screen_side ; see which horizontal half of the screen soldier is being generated on
     bcs gen_soldier_right_side      ; branch if soldier is to be generated on right half of the screen
 

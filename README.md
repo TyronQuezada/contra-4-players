@@ -1,318 +1,115 @@
-# Overview
-This repository contains an annotated disassembly of the _Contra_ (US) NES ROM
-and the build script(s) to reassemble the assembly into a byte-for-byte match of
-the game.  This repo also contains supplemental documentation, diagrams,
-scripts, and tools to help further understand the game.
+﻿# CONTRA — 4 PLAYERS (by Killerz)
 
-A special thanks goes to Trax.  This project would not have gotten started
-without the amazing initial disassembly by him for his [Revenge of the Red
-Falcon](https://www.romhacking.net/hacks/2701/) project.
+![Contra 4 Players title screen](docs/hack/title.png)
 
-For the disassembly of _Contra_'s sequel, see
-https://github.com/vermiceli/nes-super-c/
+**The NES classic, now for four.** Grab three friends, plug in a Four Score and storm Red Falcon's
+base together: four commandos, four guns, one jungle that never saw it coming.
 
-```
-|-- docs - supplemental documentation
-|   |-- attachments - files used in other documentation
-|   |-- debugging - files used to help debugging
-|   |-- diagrams - mermaid diagram files documenting program flow
-|   |-- lua_scripts - lua scripts for mesen and fceux
-|   |-- sprite_library - extracted sprites for ease of viewing
-|-- src - the source code for the game
-|   |-- assets - the compressed graphics data and encoded audio for the game
-|-- assets.txt - a list of assets, their offset in baserom.nes and their length
-|-- build.bat - build script for Windows Command Prompt (CMD) (no PowerShell)
-|-- build.ps1 - recommended build script for Windows (PowerShell)
-|-- build.sh - bash build script for Linux/macOS
-|-- contra.cfg - memory mapping of PRG banks used when building
-|-- README.md
-|-- set_bytes.vbs - script used by build.bat to extract data from baserom.nes
-```
-# Building
+> 🇪🇸 [Versión en español más abajo](#español)
 
-In addition to _Contra_ (US), this repo can also build the _Probotector_ ROM.
-To keep instructions simple, the section below only contains instructions for
-building _Contra_ (US).
+[**⬇ Download the patch (latest release)**](../../releases/latest) · ⭐ *If you enjoy it, leave a star, it really helps!*
 
-If you are interested in building a _Probotector_ ROM file, first read this
-section to understand what is needed, then follow the instructions in the
-section titled _Probotector_.
+| Jungle | Base | Waterfall |
+|---|---|---|
+| ![4 players in the jungle](docs/hack/jungle.png) | ![4 players in the base](docs/hack/base.png) | ![4 players climbing the waterfall](docs/hack/waterfall.png) |
 
-## Prerequisites
-  * This repo does not include all assets (graphics data and audio data)
-  necessary for assembling the ROM. An existing copy of the game is required.
-  Place a copy of the US NES version of _Contra_ with the name `baserom.nes` in
-  the project root folder.  The file will be used by the build script to extract
-  the necessary assets.  The MD5 hash of `baserom.nes` ROM should be
-  `7BDAD8B4A7A56A634C9649D20BD3011B`.
-  * Building requires the [cc65 compiler suite](https://cc65.github.io/) to
-  assemble and link the 6502 assembly files.  Please install it and ensure the
-  bin folder is added to your path.
+## The game
 
-## Instructions
-There are 3 build scripts in this repository. All of them do the same thing.  To
-build the resulting .nes ROM file, simply execute the appropriate build script
-based on your environment.
+In 1988 Bill and Lance were sent alone to stop the alien army of Red Falcon. This time they bring
+backup. **Contra — 4 Players** is the original Contra (NES, USA) with room for **up to four players
+at the same time**, using the NES Four Score adapter:
 
-| Environment             | Command       |
-|-------------------------|---------------|
-| Windows                 | `.\build.ps1` |
-| Windows (no PowerShell) | `.\build.bat` |
-| Mac/Unix/Linux          | `./build.sh`  |
+- **1, 2, 3 or 4 players** — pick your squad on the title screen (press SELECT to scroll the list).
+- **Four commandos on screen, each with their own look**: the classic blue and red soldiers, an
+  all-blue trooper and a blue-and-red one, so nobody loses track of who is who.
+- **Every player fights for real**: own lives, own weapon, own score and extra lives, own place
+  on the HUD.
+- **Teamwork matters**: the screen only scrolls when nobody is left behind, enemies aim at the
+  closest commando, and bosses pick their target among everyone still standing.
+- **Out of lives?** Press **A** to borrow a life from a teammate and jump right back in.
+- **The legendary Konami code** (↑ ↑ ↓ ↓ ← → ← → B A on the title screen) gives **30 lives to
+  every player**.
+- **The attract demo** shows the full four-player squad in action.
+- With 1 or 2 players it plays exactly like the original game.
 
-* `build.ps1` - PowerShell script recommended for building on Windows machines.
-  Some users have reported needing to run the script as admin to access the
-  `baserom.nes`, although I haven't experienced this.  Additionally, on older
-  versions of PowerShell, you may need to adjust the execution policy with the
-  command `Set-ExecutionPolicy`.
-* `build.bat` - bat script that can be used on windows machines without
-  PowerShell, but requires VBScript support.
-* `build.sh` - bash script to be used in unix environments, or on Windows
-  environments with bash support (Git bash, WSL, etc.)
+## How to play
 
-### Video Instructions
-If you prefer video build instructions, @jdsilva has published a video on
-YouTube called
-[Contra ROM Compiling Tutorial](https://www.youtube.com/watch?v=Sa1O3S5YK5U)
+1. Download `Contra4P-by-Killerz.ips` from the [latest release](../../releases/latest).
+2. Apply it to your own **Contra (USA)** NES ROM with any IPS patcher, for example
+   [Rom Patcher JS](https://www.marcrobledo.com/RomPatcher.js/) (works in the browser) or Floating IPS.
+   - Expected ROM: Contra (USA), CRC32 `F6035030` (without the 16-byte header).
+   - Works with iNES and NES 2.0 headers.
+3. Open the patched ROM in an emulator with **Four Score** support and enable it:
+   - **FCEUX**: *Config → Input →* tick **Attach four-score**, then configure gamepads 1-4.
+   - **Mesen / Nestopia**: enable the **Four Score** (4-player adapter) in the input settings.
+4. On the title screen press **SELECT** until you see **4 PLAYERS** and press **START**.
 
-## Documentation
+Controls are the original ones: **B** fires, **A** jumps, **START** (player 1) pauses.
 
-Supplemental materials have been added that help explain interesting features of
-the code.  Below are some of the more important documents.
+Without a Four Score the game still works as the classic 1-2 player Contra.
 
-* [docs/Aim Documentation.md](./docs/Aim%20Documentation.md) - documentation on
-  how enemy aiming works
-* [docs/Bugs.md](./docs/Bugs.md) - bugs identified while disassembling
-* [docs/Contra Control Flow.md](./docs/Contra%20Control%20Flow.md) - detailed
-  look at the game routine and level routine flows.
-* [docs/Enemy Glossary.md](./docs/Enemy%20Glossary.md) - documentation on every
-  enemy type in the game
-* [docs/Enemy Routines.md](./docs/Enemy%20Routines.md) - documentation on level
-  enemy configuration and random soldier generation.
-* [docs/Graphics Documentation.md](./docs/Graphics%20Documentation.md) -
-  documentation on pattern tables, nametables, palettes, palette cycling,
-  super-tiles, background collision, and compression.
-* [docs/ROM Map.md](./docs/ROM%20Map.md) - detailed description of ROM file
-  contents 
-* [docs/Sound Documentation.md](./docs/Sound%20Documentation.md) - documentation
-  on the audio engine used as well as information on all sounds from the game.
+## Credits
 
-All sprites were captured and labeled for easy reference in
-[docs/sprite_library/README.md](./docs/sprite_library/README.md)
+- **Hack: Killerz**
+- Built on the excellent annotated disassembly of Contra by
+  [vermiceli/nes-contra-us](https://github.com/vermiceli/nes-contra-us), which this repository
+  is forked from (its original documentation lives in [README-disassembly.md](README-disassembly.md)).
+- Contra © Konami. This is a free, non-commercial fan project, not affiliated with or endorsed by
+  Konami. **No ROM is included**: you need your own legally obtained copy of the game.
 
-### Getting Started
+## Build from source
 
-At first, there is a lot to take in and it may be confusing where to start.
-The files in the repo under the `src/` folder are broken up based on the memory
-banks in the game.  The _Contra_ cartridge is a
-[UxROM](https://www.nesdev.org/wiki/UxROM) cartridge.  The game has 8, 16 KiB
-banks of memory for a total size of 128 KiB.  Banks 0 through 6 are swapped in
-and out of memory at address $8000-$bfff and bank 7 is always in memory at
-$c000-$ffff.  Knowing this helps understand the code since only 2 banks are
-available at any given time.  The start of the game and most of the game engine
-logic exists in `bank7.asm` since that's in memory all of the time and where
-the 3 NES interrupts are.
+Install [cc65](https://cc65.github.io/), put your Contra (USA) ROM as `baserom.nes` in the project
+root and run `build.ps1` (Windows) or `build.sh`. Technical notes about the hack are in
+[HACK-4P.md](HACK-4P.md).
 
-I think a good way to start reading this code is to look into
-`docs/Contra Control Flow.md`.  That file shows the responsibilities of the game
-engine loop routines and in what order those routines are called.
+---
 
-* `bank0.asm` - used exclusively for enemy routines. Enemy routines are the
-  logic controlling enemy behaviors and settings: AI, movements, attack
-  patterns, health, etc. Almost every enemy is coded in bank 0, but some
-  enemy routines, usually those who appear in more than one level, are in
-  `bank7.asm`.
-* `bank1.asm` - responsible for audio and sprites.  The audio code takes up
-  about 3/4 of the bank. The remaining 1/4 of the bank is for sprite data and
-  code to draw sprites.
-* `bank2.asm` - starts with RLE-encoded level data (graphic super-tiles for the
-  level screens).  It then contains compressed tile data and alternate tile data
-  and occasional attribute table data.  Then, bank 2 contains logic for setting
-  the players' sprite based on player state.  Next, bank 2 contains the level
-  headers, which define specifics about each level. Bank 2 then has the data
-  that specifies which enemies are on which screen and their attributes.  Bank
-  2 also contains the soldier enemy generation code.
-* `bank3.asm` - starts with the data that specifies which pattern table tiles
-  comprise super-tiles along with the color palettes.  This bank also has the
-  routines to manage the end of levels.
-* `bank4.asm` - mostly contains compressed graphic data. The rest of bank 4 is
-  the code for the ending scene animation and the ending credits, including the
-  ending credits text data.
-* `bank5.asm` - mostly contains compressed graphic data.  The rest of bank 5 is
-  the code and lookup tables for automated input for the 3 demo (attract)
-  levels.
-* `bank6.asm` - contains compressed graphics data, data for short text sequences
-  like level names and menu options.  Bank 6 also contains the code for the
-  players' weapons and bullets.
-* `bank7.asm` - the core of the game's programming. Reset, NMI, and IRQ vectors
-  are in this bank and is the entry point to the game.  Bank 7 contains the code
-  for drawing nametables and sprites, bank switching, routines for the intro
-  sequence, controller input, score calculation, graphics decompression
-  routines, palette codes, collision detection, pointer table for enemy
-  routines, shared enemy logic, score table, enemy attributes, and bullet angles
-  and speeds, and the NES undocumented footer, among other things.
+## Español
 
-### Annotations
+**El clásico de NES, ahora para cuatro.** Junta a tres amigos, conecta un Four Score y asaltad juntos
+la base de Red Falcon: cuatro comandos, cuatro armas y una jungla que no los vio venir.
 
-While reviewing the assembly, I used a notation to categorize unexpected, or
-interesting observations.  You can search the code for these annotations.
+[**⬇ Descargar el parche (última versión)**](../../releases/latest) · ⭐ *¡Si te gusta, deja una estrella!*
 
-* `!(BUG?)` - a possible bug
-* `!(HUH)` - unexpected code or logic used
-* `!(WHY?)` - unsure of why the code is the way it is
-* `!(UNUSED)` - unused code or data that is never executed nor read
-* `!(OBS)` - observation or note
+### El juego
 
-# Debugging
+En 1988 Bill y Lance fueron enviados solos contra el ejército alienígena de Red Falcon. Esta vez
+traen refuerzos. **Contra — 4 Players** es el Contra original (NES, USA) con sitio para **hasta
+cuatro jugadores a la vez**, usando el adaptador Four Score de NES:
 
-One of the biggest advantages of building this ROM is that the build scripts
-also build the debugging symbols.  Debugging symbols can be read by emulators
-and be included in the source view while debugging the game.  For example,
-[Mesen](https://github.com/SourMesen/Mesen2) will automatically load the
-debugging symbols as long as the `contra.dbg` file exists in the same folder as
-`contra.nes`.  Below is a screenshot of what debugging looks like with symbols.
+- **1, 2, 3 o 4 jugadores**: elige tu escuadrón en la pantalla de título (SELECT desplaza la lista).
+- **Cuatro comandos en pantalla, cada uno con su aspecto**: los clásicos soldados azul y rojo, uno
+  todo azul y otro azul y rojo, para que nadie se pierda.
+- **Cada jugador cuenta**: sus propias vidas, arma, puntuación y vidas extra, y su sitio en el HUD.
+- **El trabajo en equipo importa**: la pantalla solo avanza si nadie se queda atrás, los enemigos
+  apuntan al comando más cercano y los jefes eligen objetivo entre los que siguen en pie.
+- **¿Sin vidas?** Pulsa **A** para pedir una vida prestada a un compañero y volver a la acción.
+- **El mítico código Konami** (↑ ↑ ↓ ↓ ← → ← → B A en el título) da **30 vidas a todos los jugadores**.
+- **La demo** del título muestra al escuadrón completo de cuatro en acción.
+- Con 1 o 2 jugadores se juega exactamente igual que el original.
 
-![Mesen debugger screenshot](docs/attachments/mesen_debugger_screenshot.png?raw=true)
+### Cómo jugar
 
-You can see that the debugging symbols file points to the source code to include
-comments and labels.  If you move or delete the source files, you will lose all
-the debugging information.
+1. Descarga `Contra4P-by-Killerz.ips` de la [última versión](../../releases/latest).
+2. Aplícalo a tu propia ROM de **Contra (USA)** con cualquier parcheador IPS, por ejemplo
+   [Rom Patcher JS](https://www.marcrobledo.com/RomPatcher.js/) (funciona en el navegador) o Floating IPS.
+   - ROM esperada: Contra (USA), CRC32 `F6035030` (sin la cabecera de 16 bytes).
+   - Funciona con cabecera iNES y NES 2.0.
+3. Abre la ROM parcheada en un emulador con soporte de **Four Score** y actívalo:
+   - **FCEUX**: *Config → Input →* marca **Attach four-score** y configura los mandos 1-4.
+   - **Mesen / Nestopia**: activa el **Four Score** (adaptador de 4 jugadores) en la configuración de controles.
+4. En el título pulsa **SELECT** hasta ver **4 PLAYERS** y pulsa **START**.
 
-## FCEUX NameList
+Controles originales: **B** dispara, **A** salta y **START** (jugador 1) pausa.
 
-[FCEUX](https://fceux.com/web/home.html) doesn't support reading the debugger
-symbols, but you can load NameList (`.nl`) files.  These files aren't as fully
-featured as the debugging symbols file, but does at least allow you to label
-jump/branch locations and ram addresses.  It doesn't easily support comments on
-individual lines.
+Sin Four Score el juego funciona como el Contra clásico de 1-2 jugadores.
 
-I've included the `.nl` files in `docs/debugging/fceux_namelists` for both
-_Contra_ and _Probotector_.  These files were generated from the
-`-m contra.txt -vm` command line parameter to `ld65`.  Then the that file was
-converted to the `.nl` files with a custom script.  I can't promise to keep
-these up to date as the source labels change, but I will try to.
+### Créditos
 
-# Project History
-I first became interested in this project after watching the
-[Summoning Salt](https://www.youtube.com/channel/UCtUbO6rBht0daVIOGML3c8w) video
-[The History of Contra World Records](https://www.youtube.com/watch?v=GgOE64kgjjo).
-In the video starting at 35m 19s, there was a section where a speedrunner named
-`dk28` died in the middle of level 1, and was advanced to level 2 for their next
-life.  The video explains that there still isn't a known explanation as to why
-this happened.  This got me interested in the assembly and thus this project
-began.  Spoilers, I have not found the cause of the level skip bug.  It is still
-unknown whether the bug is from some bug in the code, or whether it was a
-hardware glitch.
-
-The _Contra_ (US) NES ROM was disassembled using a NES disassembly tool. This
-provided a starting point for code investigation.  The disassembler incorrectly
-marked many lines of code as data and this had to be manually corrected.  At
-this point, there was an .asm file for each ROM bank in _Contra_.
-
-Build scripts were then created for both windows console (.bat), and powershell
-(.ps1).  These scripts are equivalent and use ca65 to assemble the .asm files
-and cl65 to link the .o files into a single ROM file. Creating these build
-scripts required defining the memory addresses and bank layouts in the
-`contra.cfg` file.
-
-At this point, I had a repository that could be built that matched the NES ROM
-byte for byte.  Then, I found and was able to incorporate the comments from
-Trax's IDA Pro disassembly.  This was incredibly helpful, but more work had to
-be done as Trax's disassembly couldn't be used directly for reassembly.  For
-instance, it had a label for every line and all jump and branch statements were
-hard-coded memory address offsets and not label references.
-
-I then worked on updating all branch and jump offsets to point to label
-addresses.  This helped ensure that the code was more readable.  At this point,
-I also started updating data blocks that included memory offsets to use label
-offsets.  The goal here was twofold:
-
- * make the code more readable and similar to what the original developers would
-   have written
- * allow ROM hacking without breaking the entire build due to breaking
-   hard-coded memory offsets
-
-When all of this was done, the project could assemble and be byte-for-byte
-exactly as the _Contra_ (US) ROM.  However, this was just the prerequisite to
-documenting the codebase.  Every label had to be given an appropriate name, and
-each line of assembly had to be documented.
-
-# Probotector
-This repo can also produce a _Probotector_ ROM file.  _Probotector_ is the
-PAL-specific variation of the _Contra_ (US) game.  It is mostly identical except
-different sprites.  For a full list of differences, see the document
-`docs/Probotector.md`.
-
-## Building
-
-First read the section above for building _Contra_ (US) in general.  The process
-is very similar.  Place a _Probotector_ ROM in the root folder with the name
-`baserom.nes`.  It should have a MD5 hash of `7127F616C13B58087481DD9E93AEB2FF`.
-
-Then, depending on your environment, run one of the following commands.
-
-| Environment             | Command                         |
-|-------------------------|---------------------------------|
-| Windows                 | `.\build.ps1 -Game Probotector` |
-| Windows (no PowerShell) | `.\build.bat Probotector`       |
-| Mac/Unix/Linux          | `./build.sh Probotector`        |
-
-Notes of caution, especially for people building both _Contra_ (US) and
-_Probotector_.
-
-1.  Be sure you have the correct `baserom.nes` for the game you are building.
-Otherwise, the generated ROM will be incorrect.
-2.  If you have _Contra_ (US) assets in the `/src/assets/` folder and are
-building _Probotector_, or vice versa, the build scripts will delete the graphic
-asset data and re-extract it from the `baserom.nes`. This prevents accidentally
-using the wrong game's assets in the result ROM.
-
-# Build Details
-
-The build scripts accomplish the following tasks:
- * extracts necessary data from `baserom.nes` into `src/assets`
- * assemble each bank .asm file into a .o file
- * assemble constants.asm and ines_header into .o files
- * link all output .o files into a single .nes ROM file
-
-The build scripts all utilize [cc65 compiler suite](https://cc65.github.io/) to
-assemble and link the 6502 assembly files.  The asset data is pulled from
-`baserom.nes` as specified in `assets.txt`.  Each line in `assets.txt` specifies
-the file name of the asset, its offset into `baserom.nes`, and its length.
-
-## 1. Assembly
-Each .asm file is assembled into a .o object file.  This section outlines what
-is happening as part of that process.
-
-### Import Export Validation
-During assembly, if any symbol is undefined and not explicitly defined in an
-`.import` directive, an error will be generated.
-
-## 2. Linking
-Linking is the concept of combining the various .o object files into a single
-.nes ROM file.  This is done by the cl65 linker.  Its job is to replace labels
-with actual CPU memory addresses where the labels will exist when loaded. These
-are then stored in the resulting contra.nes ROM file. This is aided by the
-linker configuration file contra.cfg.
-
-This file specifies the layout of the .net ROM file.  Without this file, or with
-a misconfigured file, the linker would not generate an identical .nes file.
-There are two parts to the contra.cfg file: MEMORY layout and SEGMENTS layout.
-
-### Contra.cfg MEMORY Layout
-This section tells the linker where in memory each bank will exist.  The linker
-needs this to know to replace a label with the correct address.  For example,
-the opcodes that get generated for `jsr zero_out_nametables` depend on where in
-memory the label `zero_out_nametables` will exist. This is what the
-configuration file memory section specifies.
-
-### Contra.cfg SEGMENTS Layout
-This section specifies defines in which order the .o files should appear in the
-resulting .nes ROM file.
-
-# References
- * Trax's [Disassembly of _Contra (US)_](https://www.bwass.org/romhack/contra/)
- * Trax's [documentation on romhacking.net](https://www.romhacking.net/documents/713/)
- * [Tomorrow Corporation's Retro Game Internal Series on Contra](http://tomorrowcorporation.com/posts/retro-game-internals)
- * [Overview of NES Rendering by Austin Morlan](https://austinmorlan.com/posts/nes_rendering_overview/)
- * [Rom Detective article on Contra](http://www.romdetectives.com/Wiki/index.php?title=Contra_(NES))
+- **Hack: Killerz**
+- Basado en el magnífico desensamblado comentado de Contra de
+  [vermiceli/nes-contra-us](https://github.com/vermiceli/nes-contra-us), del que este repositorio
+  es un fork.
+- Contra © Konami. Proyecto fan gratuito y sin ánimo de lucro, sin relación con Konami.
+  **No incluye la ROM**: necesitas tu propia copia legal del juego.

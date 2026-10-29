@@ -5,3 +5,8 @@
 *.prg
 *.bin
 src/assets/asset-game-type.txt
+obj/
+tools-cc65/
+test/out_*
+release/
+contra4p.*

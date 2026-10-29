@@ -4011,6 +4011,32 @@ draw_sprites:
     jsr draw_hud_sprites         ; draw hud sprites
 
 @load_sprites_to_cpu_mem:
+    lda MAX_PLAYER_INDEX
+    and #$02
+    beq @two_player_order
+    ldx #$03                   ; 4-player hack: draw the 4 players first so a full OAM drops
+                               ; enemies/bullets instead of players
+
+@players_first_loop:
+    jsr draw_cpu_sprite_slot
+    ldy $07
+    bmi draw_sprites_exit      ; exit if the OAMDMA is full
+    ldx $05
+    dex
+    bpl @players_first_loop
+    ldx #$19
+
+@other_sprites_loop:
+    jsr draw_cpu_sprite_slot
+    ldy $07
+    bmi draw_sprites_exit      ; exit if the OAMDMA is full
+    ldx $05
+    dex
+    cpx #$03
+    bne @other_sprites_loop
+    beq @hide_unused_OAM       ; always branch
+
+@two_player_order:
     ldx #$19 ; up to #$19 sprites possible to load
 
 ; loops through the total number of possible sprites
@@ -4032,6 +4058,8 @@ draw_sprites:
     ldx $05               ; load the remaining number of contra sprites left to render (sprites, not tiles)
     dex                   ; decrement total sprites remaining
     bpl @load_sprite_loop ; if contra sprites left to drawn, loop to draw it
+
+@hide_unused_OAM:
     ldx $04               ; load OAMDMA_CPU_BUFFER write offset
 
 ; take the remaining sprite tiles that are available in the OAMDMA and blank them
@@ -4044,6 +4072,23 @@ draw_sprites:
 
 draw_sprites_exit:
     rts
+
+; 4-player hack: loads one CPU_SPRITE_BUFFER slot to the OAMDMA buffer
+; input
+;  * x - sprite slot
+; output
+;  * $05 - sprite slot
+draw_cpu_sprite_slot:
+    stx $05
+    lda CPU_SPRITE_BUFFER,x
+    beq draw_sprites_exit      ; slot not used
+    ldy SPRITE_ATTR,x
+    sty $00
+    ldy SPRITE_Y_POS,x
+    sty $01
+    ldy SPRITE_X_POS,x
+    sty $02
+    jmp load_sprite_to_cpu_mem
 
 ; write sprite data (OAM) to OAMDMA_CPU_BUFFER from CPU SPRITE buffer data
 ; if a >= #$80 offset is into sprite_ptr_tbl_1
@@ -4086,6 +4131,17 @@ load_sprite_to_cpu_mem:
     and #$c8                    ; keep bits xx.. x..., keep horizontal and vertical flip bits
                                 ; bit 3 signals whether to add 1 to Y position for regular sprites (not small sprites)
     sta $0b                     ; store in $0b, this is later used when rendering the sprite tile
+                                ; 4-player hack: bit 0 of $0b set for p4 (sprite slot 3) so the eor below swaps
+                                ; the two player palettes (blue torso, red legs), decided once per sprite
+    lda $05
+    cmp #$03
+    bne @p4_palette_done
+    lda MAX_PLAYER_INDEX
+    and #$02
+    beq @p4_palette_done        ; slot 3 is a bullet in 1-2 player games
+    inc $0b
+
+@p4_palette_done:
                                 ; e.g. if the sprite tile within the sprite is defined as flipped vertically or horizontally,
                                 ; and the SPRITE_ATTR specifies flipping the entire sprite, then we have to 'flip the flip', i.e. change from a 1 to a 0
     lda $00                     ; reload SPRITE_ATTR, looking to see if bit 2 is set
@@ -4104,6 +4160,96 @@ load_sprite_to_cpu_mem:
     sta $00 ; update $00 with new value
     stx $0d ; store palette and flip bits from sprite code byte 2 definition if not overwritten by SPRITE_ATTR
     ldx $04 ; load OAMDMA_CPU_BUFFER write offset
+
+; 4-player hack: faster tile loop for sprites without vertical flip (almost all of them),
+; same OAM output as @write_sprite_tile. The recoil Y adjustment is applied once to $01
+; instead of per tile, and the horizontal flip is tested with bit
+    bit $0b
+    bmi @write_sprite_tile         ; vertical flip, use the original loop
+    lda $0b
+    and #$08
+    beq @fast_sprite_tile
+    inc $01                        ; recoil, tiles are drawn 1px lower
+
+@fast_sprite_tile:
+    lda ($08),y                    ; sprite tile relative Y position, or #$80 for shared sprite
+    cmp #$80
+    beq @fast_shared_sprite
+
+@fast_tile_y:
+    clc
+    adc $01                        ; add SPRITE_Y_POS (+1 for recoil)
+    sta OAMDMA_CPU_BUFFER,x
+    iny
+    lda ($08),y                    ; pattern table tile
+    sta OAMDMA_CPU_BUFFER+1,x
+    iny
+    lda ($08),y                    ; sprite tile attributes
+    and $0d
+    ora $00
+    eor $0b
+    sta OAMDMA_CPU_BUFFER+2,x
+    iny
+    lda ($08),y                    ; sprite tile relative X position
+    bit $0b
+    bvs @fast_horizontal_flip
+
+@fast_tile_x:
+    cmp #$80                       ; (bit $0b changed the N flag) negative relative X?
+    bcs @fast_negative_x
+    clc
+    adc $02
+    bcs @fast_next_tile            ; off the right edge of the screen, skip tile
+
+@fast_write_x:
+    sta OAMDMA_CPU_BUFFER+3,x
+    dec $07
+    txa
+    clc
+    adc #$c4                       ; move to next OAMDMA_CPU_BUFFER location (sprite cycling)
+    tax
+
+@fast_next_tile:
+    iny
+    dec $03
+    bne @fast_sprite_tile
+    stx $04
+    rts
+
+@fast_negative_x:
+    clc
+    adc $02
+    bcs @fast_write_x
+    bcc @fast_next_tile            ; off the left edge of the screen, skip tile
+
+@fast_horizontal_flip:
+    sta $0c
+    lda #$f8
+    sec
+    sbc $0c
+    jmp @fast_tile_x
+
+@fast_shared_sprite:
+    lda $0b
+    and #$08
+    beq @fast_shared_sprite_addr
+    dec $01                        ; shared sprite parts don't use the recoil offset
+    lda $0b
+    and #$f7
+    sta $0b
+
+@fast_shared_sprite_addr:
+    iny
+    lda ($08),y                    ; low byte of new sprite read address
+    sta $06
+    iny
+    lda ($08),y                    ; high byte of new sprite read address
+    sta $09
+    lda $06
+    sta $08
+    ldy #$00
+    lda ($08),y                    ; sprite tile relative Y position
+    jmp @fast_tile_y
 
 @write_sprite_tile:
     lda ($08),y   ; load first byte of sprite (Y position), or #$80 for shared sprite
@@ -4170,7 +4316,12 @@ load_sprite_to_cpu_mem:
     bcs @move_next_sprite_tile      ; increment read offset, set next write offset, decrement total sprite tiles
 
 @set_x_adv_addr:
-    jsr set_x_adv_OAMDMA_addr ; set sprite tile X position (a) in OAMDMA and advance OAMDMA write address
+    sta OAMDMA_CPU_BUFFER+3,x ; 4-player hack: set_x_adv_OAMDMA_addr inlined (saves jsr/rts per tile)
+    dec $07
+    txa
+    clc
+    adc #$c4
+    tax
 
 @move_next_sprite_tile:
     iny                    ; increment sprite_xx read offset
@@ -4249,11 +4400,17 @@ draw_player_hud_sprites:
 @draw_p_sprite:
     dec $01                     ; decrement number of medals to draw
     bmi @move_to_next_player    ; if done drawing all sprites, move to next player
-    lda #$10                    ; a = #$10
+    lda $00                     ; 4-player hack: p3/p4 HUD on a second row
+    and #$02
+    asl
+    asl
+    asl                         ; #$00 for p1/p2, #$10 for p3/p4 (clears carry)
+    adc #$10                    ; a = #$10 (or #$20)
     sta OAMDMA_CPU_BUFFER,x     ; set Y position of medal/game over hud sprite to #$10
     lda hud_sprites,y           ; load HUD sprite (either medal, or game over text)
     sta OAMDMA_CPU_BUFFER+1,x   ; write tile number to OAM
     lda $00
+    and #$01                    ; 4-player hack: p3 uses the p1 palette, p4 the p2 palette
     sta OAMDMA_CPU_BUFFER+2,x   ; write the tile attributes (blue palette for p1, red palette for p2)
     lsr                         ; set carry flag if on player 2
     lda sprite_medal_x_offset,y ; load X offset based on sprite number

@@ -182,7 +182,7 @@
 .export check_enemy_collision_solid_bg, init_vars_get_enemy_bg_collision
 .export add_y_to_y_pos_get_bg_collision, add_a_y_to_enemy_pos_get_bg_collision
 .export set_flying_capsule_y_vel, set_flying_capsule_x_vel
-.export red_turret_find_target_player, player_enemy_x_dist
+.export red_turret_find_target_player, player_enemy_x_dist, random_active_player
 .export find_far_segment_for_x_pos, find_far_segment_for_a
 .export set_enemy_falling_arc_pos, set_weapon_item_indoor_velocity
 .export find_next_enemy_slot, clear_sprite_clear_enemy_pt_3
@@ -300,7 +300,7 @@ nmi_start:
     pha                                  ; push A on to the stack
     lda PPUSTATUS                        ; reset PPU latch
     ldy NMI_CHECK                        ; see if nmi interrupted previous frame's game loop
-    bne handle_sounds_set_ppu_scroll_rti ; branch if nmi occurred before game loop was completed to skip game loop
+    bne nmi_lag_frame                    ; branch if nmi occurred before game loop was completed to skip game loop
                                          ; instead just continue playing sounds, set ppu scroll, and rti
                                          ; previously unfinished frame will finish after rti and then itself rti
     jsr clear_ppu                        ; re-init PPU
@@ -332,7 +332,20 @@ nmi_start:
     jsr exe_game_routine               ; go into game routine loop
     ldy #$01
     jsr load_bank_number               ; load bank 1
+    lda MAX_PLAYER_INDEX               ; 4-player hack: when the frame is heavy, keep last frame's sprites
+    and #$02                           ; (OAMDMA_CPU_BUFFER) every other frame so the game logic keeps full
+    beq @draw_sprites                  ; speed, only with 3-4 players
+    lda LAG_SKIP_SPRITES
+    beq @draw_sprites
+    dec LAG_SKIP_SPRITES               ; still in a heavy period started by a lag frame
+    lda FRAME_COUNTER
+    lsr
+    bcs @skip_draw_sprites             ; skip on odd frames
+
+@draw_sprites:
     jsr draw_sprites                   ; bank 1
+
+@skip_draw_sprites:
     jsr write_0_to_cpu_graphics_buffer
     lda #$00
     sta NMI_CHECK                      ; successfully rendered full frame before NMI, mark flag appropriately
@@ -350,6 +363,13 @@ irq:
     rti ; return to forever_loop until nmi is triggered again
         ; rti pops the processor flags and then the program counter
         ; then starts executing at that location
+
+; 4-player hack: the game loop didn't finish in time (lag frame), remember it so the
+; next frames only redraw sprites every other frame (only with 3-4 players), then continue like the original
+nmi_lag_frame:
+    lda #$10                ; heavy period: for the next #$10 frames sprites are redrawn every other frame
+    sta LAG_SKIP_SPRITES
+    jmp handle_sounds_set_ppu_scroll_rti
 
 ; NMI_CHECK is non-zero, meaning the previous frame's game loop was interrupted
 handle_sounds_set_ppu_scroll_rti:
@@ -737,11 +757,12 @@ game_routine_00:
 
 ; table for Y positions of intro screen cursor
 ; same table is used for "CONTINUE"/"END" screen during game over
+; 4-player hack: 3 and 4 players use the 2nd line too
 player_select_cursor_pos:
 .ifdef Probotector
-    .byte $9a,$aa
+    .byte $9a,$aa,$aa,$aa
 .else
-    .byte $a2,$b2
+    .byte $a2,$b2,$b2,$b2
 .endif
 
 ; The 2nd game routine game_routine_pointer_table
@@ -840,10 +861,7 @@ game_routine_03:
 @intro_timer_elapsed:
     ora INTRO_THEME_DELAY                     ; combine DELAY_TIME_LOW_BYTE with the intro theme (with explosion) sound delay
     beq increment_game_routine                ; if both the intro theme and the delay timer are #$00 (elapsed), increment to next game routine #$04
-    lda #$01                                  ; a = #$01 (text_1_player)
-    clc                                       ; clear carry in preparation for addition
-    adc PLAYER_MODE                           ; number of players (0 = 1 player)
-                                              ; if 2 player mode, index is updated to text_2_players
+    jsr player_mode_text_index                ; text_1_player, text_2_players, text_3_players or text_4_players
     sta $00                                   ; store player mode in $00
     lda #$08                                  ; a = #$08
     and FRAME_COUNTER                         ; flash #$08 frames at a time
@@ -954,17 +972,37 @@ konami_code_exit:
 konami_code_lookup_table:
     .byte $08,$08,$04,$04,$02,$01,$02,$01,$40,$80
 
-; reads the controller for p1 and p2
+; reads the controller for p1-p4 (p3/p4 through a Four Score adapter)
 ; ultimately stores results into CONTROLLER_STATE,x and CONTROLLER_STATE_DIFF,x
 ; due to DMC channel DPCM (Delta Pulse Coded Modulation) bug in the APU, input is read twice to confirm
 ; if the inputs match then it is assumed to be a valid read, otherwise, uses last known good read
+; 4-player hack: only touches the same temp bytes as the original ($00, $01, $04, $05, $07)
+; p3/p4 use zero page bytes freed by the RAM relocation
 load_controller_state:
+    clc                       ; first read also reads the Four Score signature
     jsr read_controller_state
     lda $04
     sta $00                   ; store p1 input in $00 in CPU memory
     lda $05
     sta $01                   ; store p2 input in $01 in CPU memory
+    lda CTRL_READ_P3
+    sta CTRL_PREV_P3          ; store p3 input
+    lda CTRL_READ_P3+1
+    sta CTRL_PREV_P3+1        ; store p4 input
+    sec                       ; second read reuses the signature
     jsr read_controller_state ; re-read input to confirm it was not affected by DMC channel DPCM bug
+    ldx #$01                  ; start with player 4
+
+@ensure_p3_p4_valid:
+    lda CTRL_READ_P3,x
+    cmp CTRL_PREV_P3,x
+    beq @p3_p4_continue
+    lda CTRL_KNOWN_GOOD+2,x
+    sta CTRL_READ_P3,x
+
+@p3_p4_continue:
+    dex
+    bpl @ensure_p3_p4_valid
     ldx #$01                  ; start with player 2
 
 ensure_input_valid:
@@ -986,32 +1024,47 @@ ensure_input_valid:
     ora $05                ; combine with p2 input
     sta $04                ; store result into p1 input
 
-; store controller input for both players
+; store controller input for all players
 write_input:
-    ldx #$01
+    ldx #$03
 
 ; set the new input to memory for use in code
 ; also sets the differences between last input and new input for use in code
 set_player_input:
-    lda $04,x                   ; read player input
+    lda $04,x                   ; read player input (p1/p2)
+    cpx #$02
+    bcc @have_input
+    lda CTRL_READ_P3-2,x        ; read p3/p4 input
+
+@have_input:
+    sta $07
     tay                         ; move input into Y
+    sta CONTROLLER_STATE,x      ; store new known-good input into CONTROLLER_STATE,x
     eor CTRL_KNOWN_GOOD,x       ; find the differences between previous known-good input and new input
-    and $04,x                   ; set a to only have differences in input between last known-good and new input
+    and $07                     ; set a to only have differences in input between last known-good and new input
     sta CONTROLLER_STATE_DIFF,x ; store input differences value into memory
-    sty CONTROLLER_STATE,x      ; store new known-good input into CONTROLLER_STATE,x
-    sty CTRL_KNOWN_GOOD,x       ; store new known-good input into CTRL_KNOWN_GOOD (used only for controller input code)
-    dex                         ; move from player 2 to player 1
-    bpl set_player_input        ; read player 1 input
+    lda $07
+    sta CTRL_KNOWN_GOOD,x       ; store new known-good input into CTRL_KNOWN_GOOD (used only for controller input code)
+    lda CONTROLLER_STATE_DIFF,x ; a = input differences, as in the original routine
+    dex                         ; move to previous player
+    bpl set_player_input
     rts
 
-; reads the p1 and p2 controllers
-; stores the inputs in a bit field in $04 and $05 respectively
-; from msb to lsb: A, B, select, start, up, down, left, right
+; reads the p1 and p2 controllers, and p3/p4 when a Four Score adapter is attached
+; port 1 sends p1, p3, then signature #$10; port 2 sends p2, p4, then #$20
+; 4-player hack: with 1-2 players only the original 8 bits are read; p3/p4 and the
+; signature are only read in 3-4 player games. The signature is only read when
+; the carry is clear (first of the 2 reads per frame), the second read reuses it
+; from moving msb to lsb: A, B, select, start, up, down, left, right
 ; sets and immediately clears strobe bit to read from controllers
+; input
+;  * carry - clear to also read the Four Score signature
 ; output
 ;  * $04 - player 1 controller input
 ;  * $05 - player 2 controller input
+;  * CTRL_READ_P3 - player 3 controller input, CTRL_READ_P3+1 player 4
 read_controller_state:
+    php              ; remember whether to read the signature
     ldx #$01
     stx CONTROLLER_1 ; set the strobe bit so controller input for both controllers can be read
     dex
@@ -1032,19 +1085,64 @@ read_controller_button:
                                ; this is essentially also checking if bit 1 (Famicom expansion port controller) is set
     lsr                        ; move bit representing whether the button is pressed to the carry flag
     rol $04                    ; shift carry flag (button input flag) onto player 1 controller input bit-field
-                               ; $04 by pushing the button state bit to the next bit
     lda CONTROLLER_2           ; do the same thing for player 2 controller
     sta $07                    ; store input value in $07
     lsr                        ; move lsb specifying if button is pressed for a standard controller into carry flag
     ora $07                    ; or the original value with the shifted value
-                               ; this is essentially also checking if bit 1 (Famicom expansion port controller) is set
     lsr                        ; move bit representing whether the button is pressed to the carry flag
     rol $05                    ; shift carry flag (button input flag) onto player 2 controller input bit-field
-                               ; $05 by pushing the button state bit to the next bit
     dey                        ; decrement button loop counter
     bne read_controller_button ; loop to see if next button is pressed
-    rts                        ; finished reading controller inputs. $04 and $05 contain button state
+    lda DEMO_MODE
+    bne @no_four_score         ; the demo overwrites p3/p4 input, don't read it
+    lda MAX_PLAYER_INDEX
+    and #$02
+    beq @no_four_score         ; 1-2 players, p3/p4 not read
+    ldy #$08
 
+@read_p3_p4_bit:
+    lda CONTROLLER_1
+    lsr
+    rol CTRL_READ_P3
+    lda CONTROLLER_2
+    lsr
+    rol CTRL_READ_P3+1
+    dey
+    bne @read_p3_p4_bit
+    plp
+    bcs @check_signature       ; second read, reuse the signature from the first one
+    ldy #$08
+
+@read_signature_bit:
+    lda CONTROLLER_1
+    lsr
+    rol CTRL_SIGNATURE
+    lda CONTROLLER_2
+    lsr
+    rol CTRL_SIGNATURE+1
+    dey
+    bne @read_signature_bit
+
+@check_signature:
+    lda CTRL_SIGNATURE
+    cmp #$10
+    bne @clear_p3_p4
+    lda CTRL_SIGNATURE+1
+    cmp #$20
+    beq @exit
+
+@clear_p3_p4:
+    sty CTRL_READ_P3           ; no Four Score, y is #$00 here
+    sty CTRL_READ_P3+1
+
+@exit:
+    rts
+
+@no_four_score:
+    plp
+    sty CTRL_READ_P3           ; y is #$00 here
+    sty CTRL_READ_P3+1
+    rts
 ; decrements intro theme delay timer, and checks if player pressed start or select
 ; if so, stop demo and show player select UI
 dec_theme_delay_check_user_input:
@@ -1064,14 +1162,47 @@ dec_theme_delay_check_user_input:
     lda #$03                                 ; start button was pressed, set GAME_ROUTINE_INDEX to #$03 (start new game)
     jmp set_game_routine_index_to_a          ; go to next game routine
 
-; swaps player mode from 1 PLAYER (#$00) to 2 PLAYER (#$01) or vice versa
+; cycles player mode 1 PLAYER (#$00), 2 PLAYERS (#$01), 3 PLAYERS (#$02), 4 PLAYERS (#$03)
+; 4-player hack: the 2nd menu line is rewritten to show 2, 3 or 4 PLAYERS
 player_mode_change:
-    inc PLAYER_MODE ; add one to number of players (will correct if more than #$02 players below)
-    lda #$02
-    sec             ; set the carry flag for the next subtract statement
-    sbc PLAYER_MODE ; subtract player mode from #$02
-    bne timer_exit  ; player mode was #$00 and now is #$01, simply exit
-    sta PLAYER_MODE ; player mode was #$02, set PLAYER_MODE so it is #$00 (#$01 player)
+    inc PLAYER_MODE ; add one to number of players
+    lda PLAYER_MODE
+    cmp #$04
+    bcc @write_menu_text
+    lda #$00
+    sta PLAYER_MODE ; wrap back to 1 player
+
+@write_menu_text:
+
+; 4-player hack: the menu shows 2 of the 4 options and scrolls like a list
+; (cursor stays on line 2 for 3 and 4 players, see player_select_cursor_pos)
+draw_player_mode_menu:
+    ldx PLAYER_MODE
+    lda menu_line1_text_tbl,x
+    jsr load_bank_6_write_text_palette_to_mem
+    ldx PLAYER_MODE
+    lda menu_line2_text_tbl,x
+    jmp load_bank_6_write_text_palette_to_mem
+
+; short_text_pointer_table indexes for each PLAYER_MODE
+menu_line1_text_tbl:
+    .byte $1f,$1f,$20,$21 ; 1 PLAYER, 1 PLAYER, 2 PLAYERS, 3 PLAYERS
+
+menu_line2_text_tbl:
+    .byte $02,$02,$19,$1a ; 2 PLAYERS, 2 PLAYERS, 3 PLAYERS, 4 PLAYERS
+
+; output
+;  * a - short_text_pointer_table index for the current PLAYER_MODE
+player_mode_text_index:
+    lda PLAYER_MODE
+    cmp #$02
+    bcs @three_or_four
+    adc #$01       ; text_1_player or text_2_players (carry clear)
+    rts
+
+@three_or_four:
+    adc #$16       ; text_3_players (#$19) or text_4_players (#$1a) (carry set)
+    rts
 
 timer_exit:
     rts
@@ -1089,6 +1220,9 @@ stop_demo_load_player_select_UI:
 ; loads the 2nd intro palette for when Bill and Lance are on screen
 ; also plays the intro explosion sound
 load_intro_palette2_play_intro_sound:
+    jsr draw_player_mode_menu ; 4-player hack: menu lines depend on PLAYER_MODE (kept from the last game)
+    lda #$22                  ; 4-player hack: "4 PLAYERS BY KILLERZ" credit
+    jsr load_bank_6_write_text_palette_to_mem
     lda #$00
     sta HORIZONTAL_SCROLL                     ; set the scroll to #$00 (completed) for next frame so player select UI is shown
     lda #$b0
@@ -1136,6 +1270,19 @@ set_next_demo_level:
     lda #$62          ; a = #$62
     sta P1_NUM_LIVES  ; player 1 lives
     sta P2_NUM_LIVES  ; player 2 lives
+    sta P1_NUM_LIVES+2 ; 4-player hack: demo plays with 4 players
+    sta P1_NUM_LIVES+3
+    lda #$03
+    sta MAX_PLAYER_INDEX ; (p3/p4 game over status already cleared by clear_memory_3)
+    lda #$20
+    sta DEMO_P34_NUM_FRAMES   ; p3 starts replaying p1's recording #$40 frames late
+    lda #$30
+    sta DEMO_P34_NUM_FRAMES+1 ; p4 starts replaying p2's recording #$60 frames late
+    lda #$00
+    sta DEMO_P34_INPUT_VAL
+    sta DEMO_P34_INPUT_VAL+1
+    sta DEMO_P34_TBL_INDEX
+    sta DEMO_P34_TBL_INDEX+1
     rts
 
 ; clears certain level and player data
@@ -1147,7 +1294,7 @@ init_score_player_lives:
     sta NUM_CONTINUES  ; continues remaining
 
 reset_players_score:
-    ldx #$03 ; x = #$03
+    ldx #$07 ; x = #$07 (4-player hack: p3/p4 scores at $07e6-$07e9)
     lda #$00 ; a = #$00
 
 clear_score_byte:
@@ -1155,12 +1302,28 @@ clear_score_byte:
     dex
     bpl clear_score_byte
     sta DEMO_MODE                 ; ensure demo mode is #$00 (not in demo mode)
-    sta P1_GAME_OVER_STATUS       ; set game over status for p1 to #$00 (not in game over state)
-    ldx PLAYER_MODE               ; load number of players #$00 is 1 player, #$01 is 2 player
-    lda player_mode_1d_table,x    ; #$01 for 1 player, #$07 for 2 player
+    ldx PLAYER_MODE               ; load number of players - 1 (#$00 to #$03)
+    lda player_mode_1d_table,x    ; #$01 for 1 player, #$07 for 2+ players
     sta PLAYER_MODE_1D
-    lda p2_game_over_status_tbl,x ; load initial player 2 game over status
-    sta P2_GAME_OVER_STATUS       ; set to 1 when 1 player game; set to 0 if 2 players are playing
+    txa
+    bne @set_max_player_index
+    lda #$01                      ; 1 player games still loop over p1 and p2, like the original
+
+@set_max_player_index:
+    sta MAX_PLAYER_INDEX
+    ldy #$03                      ; set game over status for every player slot
+
+@init_game_over_status:
+    lda #$00                      ; #$00 = playing (not in game over state)
+    cpy PLAYER_MODE
+    beq @set_game_over_status
+    bcc @set_game_over_status
+    lda #$01                      ; player slot not used in this game
+
+@set_game_over_status:
+    sta P1_GAME_OVER_STATUS,y
+    dey
+    bpl @init_game_over_status
 
 init_player_lives:
     lda #$02                  ; start off with #$02 lives
@@ -1174,28 +1337,34 @@ init_player_num_lives:
     sta P1_NUM_LIVES,x          ; if X is 1, then set P2_NUM_LIVES to accumulator (a is either #$02 or #$1d)
     dex                         ; decrement player number
     bpl init_player_lives       ; if another player to set score, jump
+    ldx #$06                    ; 4-player hack: extra life score for p1-p4
+
+@init_extra_life_score:
     lda #$c8                    ; set default high score. #$c8 is 200 decimal
-    sta EXTRA_LIFE_SCORE_LOW    ; starting score for extra life (20,000)
-    sta EXTRA_LIFE_SCORE_HIGH+1 ; player 2 default score for extra life
+    sta EXTRA_LIFE_SCORE_4P,x   ; starting score for extra life (20,000)
     lda #$00
-    sta EXTRA_LIFE_SCORE_HIGH   ; clear high byte of score for extra life
+    sta EXTRA_LIFE_SCORE_4P+1,x ; clear high byte of score for extra life
+    dex
+    dex
+    bpl @init_extra_life_score
     sta KONAMI_CODE_NUM_CORRECT ; clear number of successful inputs to Konami code
     rts
 
-; a lookup of whether 1 player game or 2 player game
+; a lookup of whether 1 player game or multiplayer game
 ; first byte #$01 is when PLAYER_MODE = #$00 (1 player)
-; second byte #$07 is when PLAYER_MODE = #$01 (2 player)
+; #$07 is when PLAYER_MODE = #$01 to #$03 (2 to 4 players)
 player_mode_1d_table:
-    .byte $01,$07
-
-; initial value for P2_GAME_OVER_STATUS
-; set to #$01 for 1 player game
-; set to #$00 for 2 player game
-p2_game_over_status_tbl:
-    .byte $01,$00
+    .byte $01,$07,$07,$07
 
 ; clear memory addresses $0028 to $00f0 then CPU_SPRITE_BUFFER up to CPU_GRAPHICS_BUFFER (not including) [$300-$700)
 clear_memory_3:
+    lda #$00
+    ldx #$07 ; P1_NUM_LIVES and P1_GAME_OVER_STATUS (4 bytes each), were in [$28-$40) before 4-player hack
+
+@clear_lives_game_over:
+    sta P1_NUM_LIVES,x
+    dex
+    bpl @clear_lives_game_over
     ldx #$28
 
 ; clears memory [x-$f0) and [$300-$700)
@@ -1209,6 +1378,12 @@ clear_memory_starting_at_x:
     inx
     cpx #$f0
     bne @loop
+    ldx #<(PLAYER_ABS_RAM_END-PLAYER_ABS_RAM-1) ; player data moved out of zero page (4-player hack)
+
+@clear_player_abs_ram:
+    sta PLAYER_ABS_RAM,x
+    dex
+    bpl @clear_player_abs_ram
               ; clear memory from CPU_SPRITE_BUFFER ($300) up to CPU_GRAPHICS_BUFFER ($700)
     ldx #$07  ; ending high byte of CPU memory to clear (exclusive)
     ldy #$03  ; starting high byte of CPU memory to clear
@@ -1273,11 +1448,11 @@ add_player_score:
     bcc @set_extra_life_inc_num_lives ; always jump
 
 @set_if_extra_life:
-    cmp EXTRA_LIFE_SCORE_HIGH,y ; player score for extra life - high byte
+    cmp EXTRA_LIFE_SCORE_4P+1,y ; player score for extra life - high byte
     bcc @set_if_new_high_score  ; player did not get extra life, skip to check if player got new high score
     bne @extra_life_logic       ; score greater than necessary to get extra life
     lda PLAYER_1_SCORE_LOW,y    ; load player score low byte
-    cmp EXTRA_LIFE_SCORE_LOW,y  ; player score for extra life - low byte
+    cmp EXTRA_LIFE_SCORE_4P,y  ; player score for extra life - low byte
     bcc @set_if_new_high_score  ; player score less than EXTRA_LIFE_SCORE_LOW, no need to check if extra life
 
 ; every time an extra life is obtained, #$12c is added to points required to get next extra life (300 decimal, 30,000 in game score)
@@ -1285,27 +1460,27 @@ add_player_score:
 ; if adding special score code #$0a, then the next extra life is given and number of points needed for next extra life is unchanged
 ; because #$1388 points are added to the extra life score, so distance until next 30,000 points is kept the same
 @extra_life_logic:
-    lda EXTRA_LIFE_SCORE_HIGH,y ; player score for extra life - high byte
+    lda EXTRA_LIFE_SCORE_4P+1,y ; player score for extra life - high byte
     cmp #$75                    ; compare EXTRA_LIFE_SCORE_HIGH to #$75
     bcs @set_if_new_high_score  ; EXTRA_LIFE_SCORE_HIGH > #$75, score too high, don't give any more extra lives
     lda #$2c                    ; a = #$2c (12c = 300 decimal) (high byte will be set to #$01 a few lines down)
 
 @set_extra_life_inc_num_lives:
-    adc EXTRA_LIFE_SCORE_LOW,y  ; add 300 decimal to low byte of score required to get extra life
-    sta EXTRA_LIFE_SCORE_LOW,y  ; player score for extra life - low byte
+    adc EXTRA_LIFE_SCORE_4P,y  ; add 300 decimal to low byte of score required to get extra life
+    sta EXTRA_LIFE_SCORE_4P,y  ; player score for extra life - low byte
     lda #$01                    ; a = #$01
     ldx $01                     ; determine if high byte is set
     beq @continue_inc_num_lives ; branch if not special #$a0 score (all other scores have #$00 for high byte)
     lda #$13                    ; a = #$13
 
 @continue_inc_num_lives:
-    adc EXTRA_LIFE_SCORE_HIGH,y ; player score for extra life - high byte
+    adc EXTRA_LIFE_SCORE_4P+1,y ; player score for extra life - high byte
     bcc @inc_num_lives
     lda #$ff                    ; a = #$ff
-    sta EXTRA_LIFE_SCORE_LOW,y  ; maxed out extra life high score, max out low byte
+    sta EXTRA_LIFE_SCORE_4P,y  ; maxed out extra life high score, max out low byte
 
 @inc_num_lives:
-    sta EXTRA_LIFE_SCORE_HIGH,y ; player score for extra life - high byte
+    sta EXTRA_LIFE_SCORE_4P+1,y ; player score for extra life - high byte
     ldx $02                     ; load the player number
     inc P1_NUM_LIVES,x          ; if X is $01, then set P2 number of lives
     lda P1_NUM_LIVES,x          ; load incremented number into memory
@@ -2411,9 +2586,16 @@ end_graphic_code:
 draw_player_num_lives:
     lda #$1e                                  ; a = #$1e
     sta $02                                   ; !(HUH) unused variable $02 set to #$1e
-    lda #$07                                  ; a = #$07 (text_rest)
-    clc                                       ; clear carry in preparation for addition
-    adc $1e                                   ; add #$00 or #$01 to use either text_rest (higher location) or text_rest2 (lower location)
+    lda $1e                                   ; player index
+    cmp #$02
+    bcc @rest_p1_p2
+    adc #$18                                  ; 4-player hack: text_rest3 (#$1b) or text_rest4 (#$1c) (carry set)
+    bne @draw_rest                            ; always branch
+
+@rest_p1_p2:
+    adc #$07                                  ; text_rest (higher location) or text_rest2 (lower location)
+
+@draw_rest:
     jsr load_bank_6_write_text_palette_to_mem ; draw text string (REST)
     ldx $1e                                   ; #$00 = player 1, #$01 = player 2
     lda P1_GAME_OVER_STATUS,x                 ; load game over state for player x (1 = game over)
@@ -2467,8 +2649,15 @@ draw_player_num_lives:
 
 draw_game_over_tex:
     txa
-    clc                                       ; clear carry in preparation for addition
-    adc #$0f
+    cmp #$02
+    bcc @game_over_p1_p2
+    adc #$1a                                  ; 4-player hack: text_game_over4 (#$1d) or text_game_over5 (#$1e) (carry set)
+    bne @draw_game_over                       ; always branch
+
+@game_over_p1_p2:
+    adc #$0f                                  ; text_game_over2 or text_game_over3 (carry clear)
+
+@draw_game_over:
     jmp load_bank_6_write_text_palette_to_mem ; draw text string
 
 ; draw text "stage  " and the level's name
@@ -3112,12 +3301,14 @@ level_routine_01:
     bne skip_level_routine_01     ; jump when in demo mode
     jsr draw_stage_and_level_name ; draw "STAGE" string
     lda #$00                      ; a = #$00
-    sta $1e                       ; set PLAYER_MODE for use in draw_player_num_lives
-    jsr draw_player_num_lives     ; draw player 1 number of lives (REST XX)
-    lda PLAYER_MODE               ; number of players (0 = 1 player)
-    beq @continue                 ; branch if only one player number of lives to draw
-    sta $1e                       ; set player index to #$01, to draw number of lives for player 2
-    jsr draw_player_num_lives     ; draw player 2 number of lives (REST XX)
+    sta $1e                       ; player index for use in draw_player_num_lives
+
+@draw_rest_loop:
+    jsr draw_player_num_lives     ; draw player number of lives (REST XX)
+    inc $1e                       ; next player (4-player hack: up to 4 players)
+    lda PLAYER_MODE               ; number of players - 1
+    cmp $1e
+    bcs @draw_rest_loop
 
 @continue:
     lda #$c0 ; set delay for score display screen for non-demo mode
@@ -3196,7 +3387,9 @@ check_game_over_run_enemy_logic:
     jsr set_frame_scroll_draw_player_bullets ; draw sprites, handle input
     lda P1_GAME_OVER_STATUS                  ; player 1 game over state (1 = game over)
     and P2_GAME_OVER_STATUS                  ; player 2 game over state (1 = game over)
-    bne init_game_over                       ; if both players have game over, show ending sequence
+    and P1_GAME_OVER_STATUS+2                ; player 3 (1 when not playing)
+    and P1_GAME_OVER_STATUS+3                ; player 4 (1 when not playing)
+    bne init_game_over                       ; if all players have game over, show ending sequence
 
 ; run various enemy logic that exists in bank 0 and bank 7
 ; random enemies, all currently shown enemy logic, palette updates, etc.
@@ -3253,6 +3446,10 @@ level_routine_05:
     sta $10                         ; temporarily store current weapon in $10
     lda P2_CURRENT_WEAPON           ; current weapon code (player 2)
     sta $11                         ; temporarily store current weapon in $11
+    lda P1_CURRENT_WEAPON+2
+    sta $12                         ; player 3 weapon
+    lda P1_CURRENT_WEAPON+3
+    sta $13                         ; player 4 weapon
     ldx #$40                        ; x = #$40 (set to 30 for game over after lvl 1)
     jsr clear_memory_starting_at_x  ; clear level header data, player data, sprite buffer, and super-tile buffer (memory [$40-$f0) and [$300-$700])
     lda BOSS_DEFEATED_FLAG          ; 0 = boss not defeated, 1 = boss defeated
@@ -3262,6 +3459,10 @@ level_routine_05:
     sta P1_CURRENT_WEAPON
     lda $11                         ; restore current weapon from $11 for player 2
     sta P2_CURRENT_WEAPON           ; current weapon code (player 2)
+    lda $12
+    sta P1_CURRENT_WEAPON+2         ; player 3 weapon
+    lda $13
+    sta P1_CURRENT_WEAPON+3         ; player 4 weapon
     inc CURRENT_LEVEL               ; increment current level
     lda CURRENT_LEVEL               ; current level
     cmp #$08                        ; if greater than last level, start game ending sequence
@@ -3379,8 +3580,8 @@ level_routine_08:
     bne level_routine_exit              ; exit if timer hasn't elapsed
 
 @continue:
-    ldx #$01 ; x = #$01
-    ldy #$00 ; initialize number of alive players to #$00
+    ldx MAX_PLAYER_INDEX ; x = last player index
+    ldy #$00             ; initialize number of alive players to #$00
 
 @player_loop:
     lda P1_GAME_OVER_STATUS,x      ; load game over state for player x (1 = game over)
@@ -3888,6 +4089,9 @@ set_frame_scroll_draw_player_bullets:
 ; draw half the bullets, every other frame
 ; if only one bullet drawn every other frame
 draw_player_bullet_sprites:
+    lda MAX_PLAYER_INDEX
+    and #$02
+    bne draw_player_bullet_sprites_4p
     ldy #$07 ; maximum of #$08 player bullets drawn per frame
 
 ; loads bullets to sprite buffer
@@ -3916,46 +4120,103 @@ draw_player_bullet_sprites:
     bpl @player_bullet_loop         ; loop if y still greater than or equal 0
     rts
 
+; 4-player hack: players use PLAYER_SPRITES+0 to +3, so only 6 sprite slots
+; (+4 to +9) are left for the 16 bullets. Copies the first 6 visible bullets,
+; starting at a different bullet every frame so flicker is shared
+draw_player_bullet_sprites_4p:
+    lda FRAME_COUNTER
+    and #$0f
+    sta $08                         ; bullet index to start at
+    lda #$10
+    sta $09                         ; bullets left to check
+    ldy #$00                        ; sprite slot to write
+
+@bullet_loop:
+    ldx $08
+    lda PLAYER_BULLET_SPRITE_CODE,x ; load sprite code for specified bullet
+    beq @next_bullet                ; skip bullets without a sprite
+    sta PLAYER_SPRITES+4,y          ; update bullet sprite in PLAYER_SPRITES
+    lda PLAYER_BULLET_SPRITE_ATTR,x ; load any bullet sprite attributes
+    sta SPRITE_ATTR+4,y             ; set bullet sprite attributes
+    lda PLAYER_BULLET_Y_POS,x       ; load player bullet Y position
+    sta SPRITE_Y_POS+4,y            ; set sprite bullet Y position
+    lda PLAYER_BULLET_X_POS,x       ; load player bullet X position
+    sta SPRITE_X_POS+4,y            ; set sprite bullet X position
+    iny
+    cpy #$06
+    beq @exit                       ; all 6 sprite slots used
+
+@next_bullet:
+    inx
+    txa
+    and #$0f
+    sta $08
+    dec $09
+    bne @bullet_loop
+    lda #$00
+
+@clear_unused_slot:
+    sta PLAYER_SPRITES+4,y          ; no sprite for remaining slots
+    iny
+    cpy #$06
+    bcc @clear_unused_slot
+
+@exit:
+    rts
+
 ; initializes frame scroll, runs logic to set weapon strength, update invincibility
+; 4-player hack: loops over all players up to MAX_PLAYER_INDEX
 set_frame_scroll_weapon_strength:
     lda #$00                   ; a = #$00
     sta FRAME_SCROLL           ; how much to scroll the screen (#$00 - no scroll)
-    sta PLAYER_FRAME_SCROLL    ; clear player 1 FRAME_SCROLL amount
-    sta PLAYER_FRAME_SCROLL+1  ; clear player 2 FRAME_SCROLL amount
+    ldx #$03
+
+@clear_player_frame_scroll:
+    sta PLAYER_FRAME_SCROLL,x  ; clear player FRAME_SCROLL amount
+    dex
+    bpl @clear_player_frame_scroll
     sta ENEMY_ATTACK_FLAG      ; stop enemies from attacking
     sta PLAYER_WEAPON_STRENGTH ; clear player weapon strength
-    ldy P1_GAME_OVER_STATUS    ; game over state of player 1 (1 = game over)
-    bne @p2_game_over_status   ; skip assignment of a to #01 player 1 is in game over
-    ora #$01                   ; set a to #$01 when player 1 is not in game over
+    tay                        ; y = number of players not in game over
+    ldx MAX_PLAYER_INDEX
 
-@p2_game_over_status:
-    ldy P2_GAME_OVER_STATUS                          ; player 2 game over state (1 = game over)
-    bne run_player_invincibility_and_weapon_strength ; branch if player 2 is in game over, or if this is a single player game
-    ora #$02                                         ; set bit 1 to #$01 when player 2 is not in game over
+@count_active_players:
+    lda P1_GAME_OVER_STATUS,x  ; game over state of player x (1 = game over)
+    bne @next_count
+    iny
+    stx PLAYER_GAME_OVER_BIT_FIELD ; lowest active player index (used when only 1 player is active)
 
-; a will be #$00 when both players are in game over
-; a will be #$01 when player 1 not game over, player 2 game over (or not playing)
-; a will be #$02 when player 1 game over, player 2 not game over
-; a will be #$03 when neither player 1 nor player 2 are in game over
-run_player_invincibility_and_weapon_strength:
-    tax                                          ; transfer game over statuses to x
-    beq player_state_routine_03                  ; branch when both players are in game over
-    dex                                          ; prep for setting in PLAYER_GAME_OVER_BIT_FIELD
-    stx PLAYER_GAME_OVER_BIT_FIELD               ; #$00 = p1 not game over, p2 game over (or not playing)
-                                                 ; #$01 = p1 game over, p2 not game over, #$02 = neither p1 nor p2 are in game over
-    txa                                          ; transfer PLAYER_GAME_OVER_BIT_FIELD to a
-    and #$01                                     ; used to determine if only one player is active, if so run logic on that player
-                                                 ; otherwise run logic on p1 first
-    tax                                          ; transfer whether p2 is game over to x, set as current player
+@next_count:
+    dex
+    bpl @count_active_players
+    tya
+    beq player_state_routine_03    ; branch when all players are in game over
+    lda #$02                       ; #$02 = more than one player active
+    cpy #$02
+    bcs @set_game_over_bit_field
+    lda PLAYER_GAME_OVER_BIT_FIELD ; only one player active
+    cmp #$02
+    bcc @set_game_over_bit_field   ; p1 (#$00) or p2 (#$01), same values as the original game
+    lda #$00                       ; only p3 or p4 active, behaves like a single player game
+
+@set_game_over_bit_field:
+    sta PLAYER_GAME_OVER_BIT_FIELD ; #$00/#$01 = single active player, #$02 = several players active
+    ldx #$00
+
+@player_loop:
+    lda P1_GAME_OVER_STATUS,x
+    bne @next_player
     jsr handle_invincibility_and_weapon_strength ; run player state routine, checks invincibility, set weapon strength
-    lda PLAYER_GAME_OVER_BIT_FIELD               ; #$00 = p1 not game over, p2 game over (or not playing)
-                                                 ; #$01 = p1 game over, p2 not game over, #$02 = neither p1 nor p2 are in game over
-    cmp #$02                                     ; see if both players are active
-    bne player_state_routine_03                  ; if one of the players is game over (or not playing)
-                                                 ; already ran logic on the only active player, branch
-    inx                                          ; both players active, already handled player 1, run logic for player 2
-    jsr handle_invincibility_and_weapon_strength ; run player state routine, checks invincibility, set weapon strength
-    jsr scroll_player                            ; scroll player that isn't causing the screen to scroll if necessary
+
+@next_player:
+    inx
+    cpx MAX_PLAYER_INDEX
+    beq @player_loop
+    bcc @player_loop
+    lda PLAYER_GAME_OVER_BIT_FIELD
+    cmp #$02                       ; see if several players active
+    bne player_state_routine_03
+    jsr scroll_player              ; scroll players that aren't causing the screen to scroll if necessary
 
 player_state_routine_03:
     lda LEVEL_ROUTINE_INDEX ; load current level routine
@@ -3963,31 +4224,36 @@ player_state_routine_03:
     bne @exit               ; jump if not level routine 4 (this code is called from level_routine_04 and level_routine_09)
     lda PLAYER_MODE         ; number of players (#$00 = 1 player)
     beq @exit
-    ldx #$01                ; x = #$01
+    ldx MAX_PLAYER_INDEX
 
 @player_loop:
     lda P1_GAME_OVER_STATUS,x ; load game over state for player x (1 = game over)
-    bne @check_transfer_life
-    dex
-    bpl @player_loop
-    bmi @exit
+    beq @next_player
 
 ; related to lives transfer between players
-; if game over player presses 'A', then a life is taken from the other player if possible
+; if game over player presses 'A', then a life is taken from another player if possible
 @check_transfer_life:
     lda CONTROLLER_STATE_DIFF,x ; controller x buttons pressed
     and #$80                    ; keep bits x... .... (check for a button)
-    beq @exit                   ; if a isn't pressed, exit
-    txa
-    eor #$01                    ; swap to other player by flipping bit 0
-    tay
+    beq @next_player            ; if a isn't pressed, move to next player
+    ldy MAX_PLAYER_INDEX
+
+@find_donor_loop:
+    sty $08
+    cpx $08
+    beq @next_donor             ; can't take a life from yourself
     lda P1_NUM_LIVES,y          ; load other player's number of lives
-    beq @exit                   ; if other player doesn't have any additional remaining lives, exit
+    beq @next_donor             ; if other player doesn't have any additional remaining lives, try next
     cmp #$01
     bne @subtract_life
     lda PLAYER_STATE,y          ; load other player's player state
     cmp #$01                    ; make sure other player isn't dying and about to be on their last life
-    bne @exit                   ; if other player's player state isn't normal, exit
+    beq @subtract_life
+
+@next_donor:
+    dey
+    bpl @find_donor_loop
+    bmi @next_player            ; no player can give a life
 
 @subtract_life:
     lda P1_NUM_LIVES,y ; player y lives
@@ -4003,19 +4269,58 @@ player_state_routine_03:
     sta PLAYER_STATE,x         ; reset revived player's state to #$00 (normal)
     sta P1_GAME_OVER_STATUS,x  ; clear game over status
 
+@next_player:
+    dex
+    bpl @player_loop
+
 @exit:
     rts
 
-; find if a player needs to be scrolled back if they aren't causing the scroll
+; scroll players that aren't causing scroll in the opposite direction of the scroll
 ; for horizontal levels, this means the player is scrolled to the left
 ; for the vertical level, this means the player is scrolled down
+; 4-player hack: every active player whose PLAYER_FRAME_SCROLL is below the
+; highest one is scrolled (with 2 players this is the same as the original)
 scroll_player:
     lda LEVEL_LOCATION_TYPE     ; 0 = outdoor; 1 = indoor
-    bne @exit2                  ; exit for indoor level, or indoor boss screen
+    bne @exit                   ; exit for indoor level, or indoor boss screen
+    ldy #$00                    ; y = highest PLAYER_FRAME_SCROLL of active players
+    ldx MAX_PLAYER_INDEX
+
+@find_max_loop:
+    lda P1_GAME_OVER_STATUS,x
+    bne @next_max
+    tya
+    cmp PLAYER_FRAME_SCROLL,x
+    bcs @next_max
+    ldy PLAYER_FRAME_SCROLL,x
+
+@next_max:
+    dex
+    bpl @find_max_loop
+    sty $08
+    ldx MAX_PLAYER_INDEX
+
+@scroll_loop:
+    lda P1_GAME_OVER_STATUS,x
+    bne @next_scroll
+    lda PLAYER_FRAME_SCROLL,x
+    cmp $08
+    bcs @next_scroll            ; player is causing scroll
+    jsr scroll_one_player
+
+@next_scroll:
+    dex
+    bpl @scroll_loop
+
+@exit:
+    rts
+
+; input
+;  * x - player index of a player not causing scroll
+scroll_one_player:
     lda LEVEL_SCROLLING_TYPE    ; outdoor level, load scrolling type 0 = horizontal, indoor/base; 1 = vertical
     bne @vertical_scroll_player ; branch to handle vertical scroll player logic
-    jsr find_scrolled_player    ; find the player that isn't causing scroll and needs to be scrolled
-    beq @exit                   ; exit if both players are causing scroll, don't cause any player to be scrolled
     dec SPRITE_X_POS,x          ; move player that isn't causing scroll back
                                 ; causing the player to remain at same relative position on screen
                                 ; !(BUG?) assumes player causing scroll can only cause 1px of horizontal scroll per frame
@@ -4023,38 +4328,18 @@ scroll_player:
                                 ; due to this bug, the player on the moving cart will cause other player to be dragged forward
                                 ; 1px for each frame the player is causing scroll while on moving cart
                                 ; thanks @archycoffee
-
-@exit:
     rts
 
 @vertical_scroll_player:
     lda AUTO_SCROLL_TIMER_00 ; see if auto scroll is enabled
-    bne @exit2               ; exit if auto scroll is enabled, both players scroll down for auto scroll
-    jsr find_scrolled_player ; find player that should be scrolled down the screen,
-                             ; since they aren't causing the screen to scroll
-    beq @exit2               ; exit if both players are causing the screen to scroll
+    bne @exit                ; exit if auto scroll is enabled, both players scroll down for auto scroll
     lda SPRITE_Y_POS,x       ; load the player to scroll's Y position
     clc                      ; clear carry in preparation for addition
     adc FRAME_SCROLL         ; add the amount the screen is about to scroll
     sta SPRITE_Y_POS,x       ; adjust player position by FRAME_SCROLL so they are scrolled down the screen
-    bcc @exit2               ; exit if no overflow occurred adding to player position
+    bcc @exit                ; exit if no overflow occurred adding to player position
     inc PLAYER_HIDDEN,x      ; overflow occurred, set player as hidden (off screen)
                              ; doesn't ever seem to happen as off screen player dies before they can be hidden
-
-@exit2:
-    rts
-
-; determine player that is not causing scroll that should be moved in the opposite direction of the scroll
-; output
-;  * x - 0 for p1, 1 for p2
-;  * zero flag - clear when both players are causing scroll, set when only one
-find_scrolled_player:
-    ldx #$00                  ; x = #$00
-    lda PLAYER_FRAME_SCROLL   ; load player 1's frame scroll amount
-    cmp PLAYER_FRAME_SCROLL+1 ; compare to player 2's frame scroll amount
-    beq @exit                 ; exit if both are identical (default player 1 causes scroll, x = #$00)
-    bcc @exit                 ; exit if player 2 is causing scroll (mark player 1 causes scroll, x = #$00)
-    inx                       ; mark player 2 causing scroll (x = #$01)
 
 @exit:
     rts
@@ -4221,11 +4506,15 @@ player_state_routine_00:
 vertical_spawn_position:
     .byte $20,$60,$50,$60 ; player 1
     .byte $20,$60,$50,$60 ; player 2
+    .byte $20,$60,$50,$60 ; player 3 (4-player hack)
+    .byte $20,$60,$50,$60 ; player 4 (4-player hack)
 
 ; table for spawn X positions ($08 bytes)
 horizontal_spawn_position:
     .byte $30,$70,$30,$70 ; player 1
     .byte $20,$90,$20,$90 ; player 2
+    .byte $40,$50,$40,$50 ; player 3 (4-player hack)
+    .byte $50,$b0,$50,$b0 ; player 4 (4-player hack)
 
 ; normal player state
 player_state_routine_01:
@@ -4601,19 +4890,25 @@ d_pad_up_pressed:
 
 @indoor_screen_cleared:
     stx $10                                 ; backup player index to $10
-    txa                                     ; transfer player index to a
-    eor #$01                                ; move to other player
-    tax                                     ; transfer other player index to x
+    ldx MAX_PLAYER_INDEX                    ; check every other player
+
+@check_other_player:
+    cpx $10
+    beq @next_other_player
     lda P1_GAME_OVER_STATUS,x               ; load game over state for player x (1 = game over)
-    bne @check_players_advancing            ; branch if other player is in game over to skip player state check
-    lda PLAYER_STATE,x                      ; both players alive, load player state (0 = dropping into level, 1 = normal, 2 = dead, 3 = can't move)
+    bne @next_other_player                  ; branch if other player is in game over to skip player state check
+    lda PLAYER_STATE,x                      ; other player alive, load player state (0 = dropping into level, 1 = normal, 2 = dead, 3 = can't move)
     cmp #$01                                ; compare to normal state
     bne set_player_standing_sprite_sequence ; branch if not in normal state
     lda PLAYER_JUMP_STATUS,x                ; low nibble 1 = jumping, 0 not jumping; high nibble = facing direction
     bne set_player_standing_sprite_sequence ; branch if jumping
 
+@next_other_player:
+    dex
+    bpl @check_other_player
+
 @check_players_advancing:
-    ldx #$01 ; start loop with player 2
+    ldx MAX_PLAYER_INDEX ; start loop with last player
 
 @check_player_x_advancing:
     lda #$05                           ; a = #$05
@@ -5178,14 +5473,23 @@ set_frame_scroll_if_appropriate:
     lda SPRITE_X_POS,x                     ; load player X position
     cmp horizontal_scroll_point_tbl,y      ; load horizontal scroll point position
     bcc @exit                              ; if not yet reached point to initiate horizontal scroll, exit
-    cpy #$02                               ; see if both players are active
-    bne @set_horizontal_level_frame_scroll ; if both players aren't active, begin setting scroll
-    txa                                    ; both players active, see if other player is preventing screen scroll, transfer player index to a
-    eor #$01                               ; swap to other player
-    tay                                    ; transfer player index to y
+    cpy #$02                               ; see if several players are active
+    bne @set_horizontal_level_frame_scroll ; if only one player is active, begin setting scroll
+    stx CLOSEST_IDX                        ; several players active, see if another player is preventing screen scroll
+    ldy MAX_PLAYER_INDEX
+
+@check_other_player:
+    cpy CLOSEST_IDX
+    beq @next_other_player                 ; skip the player causing scroll
+    lda P1_GAME_OVER_STATUS,y
+    bne @next_other_player                 ; skip players in game over (or not playing)
     lda SPRITE_X_POS,y                     ; load other player's X position
     cmp #$21                               ; compare other player to left edge of screen
     bcc @stop_player_x_velocity            ; don't scroll if other player is preventing it by being too far to the left
+
+@next_other_player:
+    dey
+    bpl @check_other_player
 
 ; sets FRAME_SCROLL if needed on horizontal levels
 ; sees if player is causing scroll
@@ -6693,7 +6997,7 @@ load_rle_repeat_command:
 
 ; checks if a player is colliding with the current enemy
 check_players_collision:
-    ldx #$01 ; x = #$01
+    ldx MAX_PLAYER_INDEX ; start with last player
 
 ; input
 ;  * x - current player to test
@@ -7015,7 +7319,18 @@ bullet_enemy_collision_test:
     cmp #$05                   ; see if laser
     bne @set_routine_exit      ; branch if not laser
     stx $08                    ; laser, store bullet slot number in $08
+    lda MAX_PLAYER_INDEX
+    and #$02                   ; non-zero for 3-4 players
+    beq @two_player_laser_a
+    txa
+    and #$0c                   ; 4-player hack: each player owns 4 slots starting at player * 4
+    tax
+    bpl @continue_2            ; always branch
+
+@two_player_laser_a:
     txa                        ; move bullet slot number to a
+
+@two_player_laser:
     ldx #$00                   ; x = #$00
     cmp #$0a                   ; see if bullet slot number to #$0a
     bcc @continue_2
@@ -8878,7 +9193,7 @@ set_flying_capsule_path:
 
 ; red turret
 red_turret_find_target_player:
-    jsr player_enemy_x_dist ; a = closest X distance to enemy from players, y = closest player (#$00 or #$01)
+    jsr player_enemy_x_dist_2p ; a = closest X distance to enemy from players, y = closest player (#$00 or #$01)
     tya                     ; set the closest player to a #$00 for p1, #$01 for p2
     eor #$01                ; flip to other player
     sta $0c                 ; store farther player in $0c
@@ -8886,7 +9201,7 @@ red_turret_find_target_player:
     sta $0a                 ; store player 1 X distance to enemy in $0a
     lda $09                 ; load player 2 X distance to enemy
     sta $0b                 ; store player 2 X distance to enemy in $0b
-    jsr player_enemy_y_dist ; a = closest Y distance to enemy from players, y = closest player (#$00 or #$01)
+    jsr player_enemy_y_dist_2p ; a = closest Y distance to enemy from players, y = closest player (#$00 or #$01)
     tya                     ; set the closest player to a #$00 for p1, #$01 for p2
     eor #$01                ; flip to other player
     cmp $0c                 ; compare farther y player to farther x player
@@ -8919,6 +9234,56 @@ red_turret_find_target_player:
 ;  * $09 - p2 X distance
 ; when player state is not #$01, #$fe is stored in $08 or #$ff in $09
 player_enemy_x_dist:
+    lda MAX_PLAYER_INDEX
+    and #$02
+    beq player_enemy_x_dist_2p ; 1-2 players: original routine (flags included)
+    jsr player_enemy_x_dist_2p
+    jmp closest_extra_player_x
+
+; 4-player hack: picks a random player that is not in game over
+; with 2 players gives the same result as the original p1/p2 checks
+; input
+;  * a - random number (only bits 0-1 used)
+; output
+;  * a and y - player index, #$00 when every player is in game over
+random_active_player:
+    php                  ; keep caller flags (original code only did and #$01)
+    and #$03
+    cmp MAX_PLAYER_INDEX
+    beq @have_start
+    bcc @have_start
+    and #$01
+
+@have_start:
+    tay
+    lda #$04
+    sta CLOSEST_DIST     ; number of player slots left to check
+
+@loop:
+    cpy MAX_PLAYER_INDEX
+    beq @check_player
+    bcs @next_player     ; player index not used in this game
+
+@check_player:
+    lda P1_GAME_OVER_STATUS,y
+    beq @found
+
+@next_player:
+    iny
+    tya
+    and #$03
+    tay
+    dec CLOSEST_DIST
+    bne @loop
+    ldy #$00
+
+@found:
+    plp
+    tya
+    rts
+
+; original 2 player version, used by the red turret which indexes $08/$09 by player
+player_enemy_x_dist_2p:
     lda SPRITE_X_POS    ; load player 1 X position
     sec                 ; prepare for subtraction
     sbc ENEMY_X_POS,x   ; enemy X position on screen
@@ -8933,6 +9298,40 @@ player_enemy_x_dist:
     sbc ENEMY_X_POS,x       ; enemy X position on screen
     jmp lda_closer_distance ; jump to determine smallest of $08 (p1) and $09 (p2) store in a
 
+; 4-player hack: also consider p3/p4 (normal state only), $08/$09 stay p1/p2
+closest_extra_player_x:
+    sta CLOSEST_DIST
+    sty CLOSEST_IDX
+    ldy MAX_PLAYER_INDEX
+
+@loop:
+    cpy #$02
+    bcc closest_extra_player_exit
+    lda PLAYER_STATE,y
+    cmp #$01
+    bne @next
+    lda SPRITE_X_POS,y
+    sec
+    sbc ENEMY_X_POS,x
+    bcs @compare
+    eor #$ff
+    adc #$01
+
+@compare:
+    cmp CLOSEST_DIST
+    bcs @next
+    sta CLOSEST_DIST
+    sty CLOSEST_IDX
+
+@next:
+    dey
+    bpl @loop
+
+closest_extra_player_exit:
+    ldy CLOSEST_IDX
+    lda CLOSEST_DIST
+    rts
+
 ; calculates Y distance between p1 and p2 with the current enemy (x register)
 ; input
 ;  * x - the current enemy offset
@@ -8944,6 +9343,14 @@ player_enemy_x_dist:
 ;  * $09 - p2 Y distance
 ; when player state is not #$01, #$fe is stored in $08 or #$ff in $09
 player_enemy_y_dist:
+    lda MAX_PLAYER_INDEX
+    and #$02
+    beq player_enemy_y_dist_2p ; 1-2 players: original routine (flags included)
+    jsr player_enemy_y_dist_2p
+    jmp closest_extra_player_y
+
+; original 2 player version, used by the red turret which indexes $08/$09 by player
+player_enemy_y_dist_2p:
     lda SPRITE_Y_POS    ; load player 1 Y position
     sec                 ; prepare for subtraction
     sbc ENEMY_Y_POS,x   ; enemy Y position on screen
@@ -8956,6 +9363,37 @@ player_enemy_y_dist:
     lda SPRITE_Y_POS+1 ; load player 2 Y position
     sec                ; prepare for subtraction
     sbc ENEMY_Y_POS,x  ; enemy Y position on screen
+    jmp lda_closer_distance
+
+; 4-player hack: also consider p3/p4 (normal state only), $08/$09 stay p1/p2
+closest_extra_player_y:
+    sta CLOSEST_DIST
+    sty CLOSEST_IDX
+    ldy MAX_PLAYER_INDEX
+
+@loop:
+    cpy #$02
+    bcc closest_extra_player_exit
+    lda PLAYER_STATE,y
+    cmp #$01
+    bne @next
+    lda SPRITE_Y_POS,y
+    sec
+    sbc ENEMY_Y_POS,x
+    bcs @compare
+    eor #$ff
+    adc #$01
+
+@compare:
+    cmp CLOSEST_DIST
+    bcs @next
+    sta CLOSEST_DIST
+    sty CLOSEST_IDX
+
+@next:
+    dey
+    bpl @loop
+    bmi closest_extra_player_exit
 
 ; take the smallest of $08 (p1) and $09 (p2) and store in a accounting for overflow
 ; ignoring non-normal player state
@@ -10519,18 +10957,26 @@ dragon_arm_orb_seek_should_move:
 ;   * #$03 = player to left of enemy and player above enemy
 get_quadrant_aim_dir_for_player:
     lda $0a                  ; load the player player index
-    and #$01                 ; should only be #$00 or #$01 (p1 or p2)
+    and #$03                 ; 4-player hack: #$00 to #$03
+    cmp MAX_PLAYER_INDEX
+    beq @have_player
+    bcc @have_player
+    and #$01                 ; not a player in this game, use p1 or p2 like the original
+
+@have_player:
     tay                      ; transfer to y
     lda PLAYER_STATE,y       ; load the closest player's PLAYER_STATE
     cmp #$01                 ; see if normal state
     beq @get_y_pos           ; branch if normal state
-    tya                      ; not normal state, either falling, dead or can't move
-    eor #$01                 ; flip to other player
-    tay
+    ldy MAX_PLAYER_INDEX     ; not normal state, either falling, dead or can't move, find another player
+
+@find_other_player:
     lda PLAYER_STATE,y       ; load other player's PLAYER_STATE
     cmp #$01                 ; see if normal state
     beq @get_y_pos           ; branch if normal state
-    lda #$ff                 ; other player also not in normal state
+    dey
+    bpl @find_other_player
+    lda #$ff                 ; other players also not in normal state
     sta $0a                  ; set player Y position to #$ff (bottom of screen)
     lda #$80                 ; a = #$80
     sta $0b                  ; set player X position to #$80 (center of screen)

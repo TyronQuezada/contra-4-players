@@ -39,7 +39,7 @@
 .import check_enemy_collision_solid_bg, init_vars_get_enemy_bg_collision
 .import add_y_to_y_pos_get_bg_collision, add_a_y_to_enemy_pos_get_bg_collision
 .import set_flying_capsule_y_vel, set_flying_capsule_x_vel
-.import red_turret_find_target_player, player_enemy_x_dist
+.import red_turret_find_target_player, player_enemy_x_dist, random_active_player
 .import find_far_segment_for_x_pos, find_far_segment_for_a
 .import set_enemy_falling_arc_pos, set_weapon_item_indoor_velocity
 .import find_next_enemy_slot, clear_sprite_clear_enemy_pt_3
@@ -1083,6 +1083,13 @@ red_turret_routine_03:
     jmp set_enemy_delay_adv_routine     ; set ENEMY_ANIMATION_DELAY counter to #$01 advance to red_turret_routine_04
 
 @gen_bullet_if_appropriate:
+    lda MAX_PLAYER_INDEX
+    and #$02
+    beq @two_player_target
+    jsr red_turret_target_4p          ; 4-player hack: a = player to target
+    jmp @continue
+
+@two_player_target:
     jsr red_turret_find_target_player ; find player to target, set to y
     jsr check_red_turret_firing_range ; see if the player is above (or equal) and to the left of the red turret
     tya                               ; transfer closest player to a
@@ -1196,6 +1203,43 @@ check_red_turret_firing_range:
     cmp SPRITE_X_POS,y ; set carry if red turret to right of player
 
 @exit:
+    rts
+
+; 4-player hack: target the closest normal-state player within firing range
+; (above or equal and to the left), otherwise the closest player
+; output
+;  * a - player index to target
+red_turret_target_4p:
+    lda #$ff
+    sta CLOSEST_DIST           ; best X distance so far
+    ldy MAX_PLAYER_INDEX
+
+@player_loop:
+    lda PLAYER_STATE,y
+    cmp #$01
+    bne @next_player           ; skip players not in normal state
+    jsr check_red_turret_firing_range
+    bcc @next_player           ; player out of firing range
+    lda ENEMY_X_POS,x
+    sec
+    sbc SPRITE_X_POS,y         ; X distance (turret is to the right of the player)
+    cmp CLOSEST_DIST
+    bcs @next_player
+    sta CLOSEST_DIST
+    sty CLOSEST_IDX
+
+@next_player:
+    dey
+    bpl @player_loop
+    lda CLOSEST_DIST
+    cmp #$ff
+    beq @closest_player        ; nobody in firing range
+    lda CLOSEST_IDX
+    rts
+
+@closest_player:
+    jsr player_enemy_x_dist    ; y = closest player
+    tya
     rts
 
 ; pointer table for running man (#$06 * #$02 = #$16 bytes)
@@ -7614,15 +7658,8 @@ giant_soldier_stay_still:
 
 ; gets boss to face random non-game over player
 giant_soldier_face_random_player:
-    ldy #$00                ; y = #$00 (player 1)
-    lda P2_GAME_OVER_STATUS ; load player 2 game over state (1 = game over)
-    bne @set_sprite_attr    ; flip sprite horizontally if appropriate, then exit
-    lda RANDOM_NUM          ; player 2 not in game over, load random number
-    and #$01                ; keep bit 0 (select random player)
-    tay                     ; transfer player index to y
-    lda P1_GAME_OVER_STATUS ; game over state of player 1
-    beq @set_sprite_attr    ; flip sprite horizontally if appropriate, then exit
-    ldy #$01                ; y = #$01, player 1 in game over, use player 2
+    lda RANDOM_NUM           ; load random number
+    jsr random_active_player ; 4-player hack: y = random player not in game over
 
 @set_sprite_attr:
     lda SPRITE_X_POS,y        ; load randomly selected non-dead player's current X position
@@ -9713,16 +9750,10 @@ white_blob_routine_00:
                                 ; then targets player quickly [#$50-#$6f]
     lda #$c0                    ; a = #$c0
     sta ENEMY_ANIMATION_DELAY,x ; set enemy animation frame delay counter
-    lda P2_GAME_OVER_STATUS     ; player 2 game over state (1 = game over)
-    bne @continue               ; branch if player 2 is game over
     lda RANDOM_NUM              ; load random number
     adc FRAME_COUNTER           ; add frame counter to random number
-    and #$01                    ; keep bit 0
+    jsr random_active_player    ; 4-player hack: random player not in game over
     sta ENEMY_VAR_3,x           ; store which player should be targeted
-    lda P1_GAME_OVER_STATUS     ; player 1 game over state (1 = game over)
-    beq @continue               ; branch if player 1 is not in game over
-    lda #$01                    ; player 1 game over, have blob target player 2
-    sta ENEMY_VAR_3,x           ; set to target player 2
 
 @continue:
     lda #$b0                     ; a = #$b0 (sprite_b0 - poisonous insect gel)
@@ -9999,12 +10030,10 @@ alien_spider_set_ground_vel_and_routine:
     lda #$80                      ; a = #$80
     sta ENEMY_X_VELOCITY_FRACT,x  ; set enemy fractional velocity to .5
     jsr set_enemy_y_velocity_to_0 ; set Y velocity to zero
-    lda P2_GAME_OVER_STATUS       ; player 2 game over state (1 = game over or player 2 not playing)
-    bne @set_jump_flag_routine_03 ; branch if player 2 game over or not playing
-    lda RANDOM_NUM                ; player 2 playing, load random number
+    lda RANDOM_NUM                ; load random number
     adc FRAME_COUNTER             ; add frame counter to random number
-    and #$01                      ; keep bit 0
-    sta ENEMY_VAR_1,x             ; store player to attack (0 = player 1, 1 = player 2)
+    jsr random_active_player      ; 4-player hack: random player not in game over
+    sta ENEMY_VAR_1,x             ; store player to attack (0 = player 1, 1 = player 2, ...)
 
 ; determine whether or not the alien spider will jump randomly and then set routine to alien_spider_routine_03
 @set_jump_flag_routine_03:
@@ -10266,6 +10295,8 @@ alien_spider_spawn_routine_01:
 @continue:
     lda P1_CURRENT_WEAPON       ; load player 1 current weapon code (and rapid fire flag)
     ora P2_CURRENT_WEAPON       ; merge with player 2 current weapon code (and rapid fire flag)
+    ora P1_CURRENT_WEAPON+2     ; 4-player hack: merge p3 and p4 weapons too
+    ora P1_CURRENT_WEAPON+3
     and #$07                    ; keep bits .... .xxx
     sta $08                     ; store merged weapon code in $08
     lda #$0a                    ; a = #$0a

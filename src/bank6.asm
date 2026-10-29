@@ -64,7 +64,7 @@ graphic_data_15:
 graphic_data_16:
     .incbin "assets/graphic_data/graphic_data_16.bin"
 
-; pointer table for all the strings, and palette data (#$02 bytes * #$19 strings = #$32 bytes)
+; pointer table for all the strings, and palette data (#$02 bytes * #$23 strings = #$46 bytes)
 short_text_pointer_table:
     .addr text_1_player              ; CPU address $b2e1 - 1 PLAYER
     .addr text_1_player              ; CPU address $b2e1 - 1 PLAYER
@@ -91,6 +91,16 @@ short_text_pointer_table:
     .addr text_energy_zone           ; CPU address $b38d - ENERGY ZONE
     .addr text_hangar                ; CPU address $b39b - HANGAR
     .addr text_alien_lair            ; CPU address $b3a5 - ALIEN'S LAIR
+    .addr text_3_players             ; 4-player hack (#$19) - 3 PLAYERS
+    .addr text_4_players             ; 4-player hack (#$1a) - 4 PLAYERS
+    .addr text_rest3                 ; 4-player hack (#$1b) - REST (p3)
+    .addr text_rest4                 ; 4-player hack (#$1c) - REST (p4)
+    .addr text_game_over4            ; 4-player hack (#$1d) - GAME OVER (p3)
+    .addr text_game_over5            ; 4-player hack (#$1e) - GAME OVER (p4)
+    .addr text_1_player_line1        ; 4-player hack (#$1f) - 1 PLAYER (menu line 1, clears trailing S)
+    .addr text_2_players_line1       ; 4-player hack (#$20) - 2 PLAYERS (menu line 1)
+    .addr text_3_players_line1       ; 4-player hack (#$21) - 3 PLAYERS (menu line 1)
+    .addr text_by_killerz            ; 4-player hack (#$22) - 4 PLAYERS BY KILLERZ (title screen credit)
 
 ; first two bytes are PPU address, followed by text
 ; $fe is the end of text string
@@ -161,6 +171,56 @@ text_2_players:
 .endif
     .byte $32,$00,$50,$4c,$41,$59,$45,$52,$53,$fe
 
+; 4-player hack: the menu shows 2 lines and scrolls like a list
+; 1-2 players: 1 PLAYER / 2 PLAYERS, 3 players: 2 PLAYERS / 3 PLAYERS, 4 players: 3 PLAYERS / 4 PLAYERS
+; title screen credit
+text_by_killerz:
+    .byte $20,$a6
+    .byte $34,$00,$50,$4c,$41,$59,$45,$52,$53,$00,$42,$59,$00,$4b,$49,$4c,$4c,$45,$52,$5a,$fe
+
+text_1_player_line1:
+.ifdef Probotector
+    .byte $22,$6d
+.else
+    .byte $22,$87
+.endif
+    .byte $31,$00,$50,$4c,$41,$59,$45,$52,$00,$fe
+
+text_2_players_line1:
+.ifdef Probotector
+    .byte $22,$6d
+.else
+    .byte $22,$87
+.endif
+    .byte $32,$00,$50,$4c,$41,$59,$45,$52,$53,$fe
+
+text_3_players_line1:
+.ifdef Probotector
+    .byte $22,$6d
+.else
+    .byte $22,$87
+.endif
+    .byte $33,$00,$50,$4c,$41,$59,$45,$52,$53,$fe
+
+; 4-player hack: drawn over "2 PLAYERS" when selecting 3 or 4 players
+; "3 PLAYERS" text
+text_3_players:
+.ifdef Probotector
+    .byte $22,$ad
+.else
+    .byte $22,$c7
+.endif
+    .byte $33,$00,$50,$4c,$41,$59,$45,$52,$53,$fe
+
+; "4 PLAYERS" text
+text_4_players:
+.ifdef Probotector
+    .byte $22,$ad
+.else
+    .byte $22,$c7
+.endif
+    .byte $34,$00,$50,$4c,$41,$59,$45,$52,$53,$fe
+
 ; "REST" text (PPU address $20c2)
 text_rest:
     .byte $20,$c2,$52,$45,$53,$54,$00,$00,$00,$fe
@@ -168,6 +228,25 @@ text_rest:
 ; "REST" text (PPU address $20d2)
 text_rest2:
     .byte $20,$d2,$52,$45,$53,$54,$00,$00,$00,$fe
+
+; 4-player hack: p3/p4 lives on the row below p1/p2, digits aligned with p1/p2
+; "3P REST" text (PPU address $20e0)
+text_rest3:
+    .byte $20,$e0,$33,$50,$00,$52,$45,$53,$54,$00,$00,$fe
+
+; "4P REST" text (PPU address $20f0)
+text_rest4:
+    .byte $20,$f0,$34,$50,$00,$52,$45,$53,$54,$00,$00,$fe
+
+; "3P GAME OVER" text (PPU address $20e0)
+text_game_over4:
+    .byte $20,$e0
+    .byte $33,$50,$00,$47,$41,$4d,$45,$00,$4f,$56,$45,$52,$fe
+
+; "4P GAME OVER" text (PPU address $20f0)
+text_game_over5:
+    .byte $20,$f0
+    .byte $34,$50,$00,$47,$41,$4d,$45,$00,$4f,$56,$45,$52,$fe
 
 ; "HI" text
 text_hi:
@@ -533,6 +612,17 @@ init_s_bullet_pos_and_vel:
 fire_weapon_routine_l:
     lda #$01      ; a = #$01
     sta $09       ; set rapid fire flag
+    lda MAX_PLAYER_INDEX
+    and #$02     ; (and keeps carry like the original)
+    beq @two_player_slots
+    txa           ; 4-player hack: lasers use the player's 4 slots
+    asl
+    asl
+    tay
+    bne @continue
+    beq @continue ; always branch
+
+@two_player_slots:
     ldy #$0a      ; y = #$0a
     txa
     bne @continue ; branch if player 2
@@ -607,9 +697,62 @@ create_bullet_max_a_p2_0a:
 ; creates a bullet up to the amount specified in accumulator + one
 create_bullet_max_a:
     sta $00               ; store max bullets in $00
+    lda MAX_PLAYER_INDEX
+    and #$02              ; (and keeps carry like the original)
+    bne @four_player_slots
     ldy $11               ; load current player being evaluated
     bne @find_bullet_slot ; branch if player 2 and start at slot specified in x register
     ldx #$00              ; player 1, start at #$00
+    beq @find_bullet_slot ; always branch
+
+; 4-player hack: with 3-4 players the 16 slots are shared, each player can have
+; up to $00 + 1 bullets (at most 6), searching its own 4 slots (player * 4) first
+@four_player_slots:
+    lda $00
+    cmp #$06
+    bcc @count_owned_bullets
+    lda #$05              ; at most 6 bullets per player
+    sta $00
+
+@count_owned_bullets:
+    ldx #$0f
+    ldy #$00              ; number of bullets owned by the player
+
+@count_loop:
+    lda PLAYER_BULLET_SLOT,x
+    beq @next_count
+    lda PLAYER_BULLET_OWNER,x
+    cmp $11
+    bne @next_count
+    iny
+
+@next_count:
+    dex
+    bpl @count_loop
+    cpy $00
+    beq @find_shared_slot
+    bcc @find_shared_slot
+    lda #$ff              ; player already has the maximum number of bullets, clear zero flag
+    rts
+
+@find_shared_slot:
+    lda $11
+    asl
+    asl
+    tax                   ; start at the player's own slots
+    lda #$0f
+    sta $00              ; check all #$10 slots
+
+@shared_slot_loop:
+    lda PLAYER_BULLET_SLOT,x
+    beq create_enemy_bullet ; create bullet if slot is empty
+    inx
+    txa
+    and #$0f
+    tax
+    dec $00
+    bpl @shared_slot_loop
+    rts                   ; no bullet slots found (zero flag clear)
 
 @find_bullet_slot:
     lda PLAYER_BULLET_SLOT,x ; get value of current bullet slot

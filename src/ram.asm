@@ -29,14 +29,14 @@
 .exportzp PLAYER_WEAPON_STRENGTH         ; $2f
 .exportzp CURRENT_LEVEL                  ; $30
 .exportzp GAME_COMPLETION_COUNT          ; $31
-.exportzp P1_NUM_LIVES                   ; $32
-.exportzp P2_NUM_LIVES                   ; $33
+.export P1_NUM_LIVES                   ; $32
+.export P2_NUM_LIVES                   ; $33
 .exportzp RANDOM_NUM                     ; $34
 .exportzp OAMDMA_CPU_BUFFER_OFFSET       ; $35
 .exportzp NUM_PALETTES_TO_LOAD           ; $36
 .exportzp INDOOR_SCREEN_CLEARED          ; $37
-.exportzp P1_GAME_OVER_STATUS            ; $38
-.exportzp P2_GAME_OVER_STATUS            ; $39
+.export P1_GAME_OVER_STATUS            ; $38
+.export P2_GAME_OVER_STATUS            ; $39
 .exportzp NUM_CONTINUES                  ; $3a
 .exportzp BOSS_DEFEATED_FLAG             ; $3b
 .exportzp EXTRA_LIFE_SCORE_LOW           ; $3c
@@ -97,49 +97,51 @@
 .exportzp ALIEN_FETUS_AIM_TIMER_INDEX    ; $8b
 .exportzp ENEMY_ATTACK_FLAG              ; $8e
 .exportzp PLAYER_STATE                   ; $90
-.exportzp INDOOR_TRANSITION_X_ACCUM      ; $92
-.exportzp PLAYER_JUMP_COEFFICIENT        ; $94
+.export INDOOR_TRANSITION_X_ACCUM      ; $92
+.export PLAYER_JUMP_COEFFICIENT        ; $94
 .exportzp INDOOR_TRANSITION_X_FRACT_VEL  ; $96
 .exportzp PLAYER_X_VELOCITY              ; $98
-.exportzp INDOOR_TRANSITION_Y_FRACT_VEL  ; $9a
-.exportzp INDOOR_TRANSITION_Y_FAST_VEL   ; $9c
+.export INDOOR_TRANSITION_Y_FRACT_VEL  ; $9a
+.export INDOOR_TRANSITION_Y_FAST_VEL   ; $9c
 .exportzp PLAYER_ANIM_FRAME_TIMER        ; $9e
 .exportzp PLAYER_JUMP_STATUS             ; $a0
-.exportzp PLAYER_FRAME_SCROLL            ; $a2
+.export PLAYER_FRAME_SCROLL            ; $a2
 .exportzp EDGE_FALL_CODE                 ; $a4
 .exportzp PLAYER_ANIMATION_FRAME_INDEX   ; $a6
-.exportzp PLAYER_INDOOR_ANIM_Y           ; $a8
+.export PLAYER_INDOOR_ANIM_Y           ; $a8
 .exportzp P1_CURRENT_WEAPON              ; $aa
+.export PLAYER_ABS_RAM, PLAYER_ABS_RAM_END, MAX_PLAYER_INDEX, CLOSEST_DIST, CLOSEST_IDX, EXTRA_LIFE_SCORE_4P
+.exportzp CTRL_PREV_P3, CTRL_READ_P3, CTRL_SIGNATURE
 .exportzp P2_CURRENT_WEAPON              ; $ab
-.exportzp PLAYER_M_WEAPON_FIRE_TIME      ; $ac
-.exportzp NEW_LIFE_INVINCIBILITY_TIMER   ; $ae
-.exportzp INVINCIBILITY_TIMER            ; $b0
+.export PLAYER_M_WEAPON_FIRE_TIME      ; $ac
+.export NEW_LIFE_INVINCIBILITY_TIMER   ; $ae
+.export INVINCIBILITY_TIMER            ; $b0
 .exportzp PLAYER_WATER_STATE             ; $b2
-.exportzp PLAYER_DEATH_FLAG              ; $b4
-.exportzp PLAYER_ON_ENEMY                ; $b6
-.exportzp PLAYER_FALL_X_FREEZE           ; $b8
+.export PLAYER_DEATH_FLAG              ; $b4
+.export PLAYER_ON_ENEMY                ; $b6
+.export PLAYER_FALL_X_FREEZE           ; $b8
 .exportzp PLAYER_HIDDEN                  ; $ba
 .exportzp PLAYER_SPRITE_SEQUENCE         ; $bc
-.exportzp PLAYER_INDOOR_ANIM_X           ; $be
-.exportzp PLAYER_AIM_PREV_FRAME          ; $c0
+.export PLAYER_INDOOR_ANIM_X           ; $be
+.export PLAYER_AIM_PREV_FRAME          ; $c0
 .exportzp PLAYER_AIM_DIR                 ; $c2
 .exportzp PLAYER_Y_FRACT_VELOCITY        ; $c4
 .exportzp PLAYER_Y_FAST_VELOCITY         ; $c6
 .exportzp ELECTROCUTED_TIMER             ; $c8
-.exportzp INDOOR_PLAYER_JUMP_FLAG        ; $ca
-.exportzp PLAYER_WATER_TIMER             ; $cc
+.export INDOOR_PLAYER_JUMP_FLAG        ; $ca
+.export PLAYER_WATER_TIMER             ; $cc
 .exportzp PLAYER_RECOIL_TIMER            ; $ce
 .exportzp INDOOR_PLAYER_ADV_FLAG         ; $d0
-.exportzp PLAYER_SPECIAL_SPRITE_TIMER    ; $d2
-.exportzp PLAYER_FAST_X_VEL_BOOST        ; $d4
+.export PLAYER_SPECIAL_SPRITE_TIMER    ; $d2
+.export PLAYER_FAST_X_VEL_BOOST        ; $d4
 .exportzp PLAYER_SPRITE_CODE             ; $d6
 .exportzp PLAYER_SPRITE_FLIP             ; $d8
-.exportzp PLAYER_BG_FLAG_EDGE_DETECT     ; $da
+.export PLAYER_BG_FLAG_EDGE_DETECT     ; $da
 .exportzp PLAYER_GAME_OVER_BIT_FIELD     ; $df
 .exportzp SOUND_TABLE_PTR                ; $ec
-.exportzp CONTROLLER_STATE               ; $f1
-.exportzp CONTROLLER_STATE_DIFF          ; $f5
-.exportzp CTRL_KNOWN_GOOD                ; $f9
+.export CONTROLLER_STATE               ; $f1
+.export CONTROLLER_STATE_DIFF          ; $f5
+.export CTRL_KNOWN_GOOD                ; $f9
 .exportzp VERTICAL_SCROLL                ; $fc
 .exportzp HORIZONTAL_SCROLL              ; $fd
 .exportzp PPUMASK_SETTINGS               ; $fe
@@ -272,12 +274,15 @@ GAME_COMPLETION_COUNT:
 
 ; $32 - P1 number of lives, #$00 is last life, on game over stays #$00
 ; but P1_GAME_OVER_STATUS becomes #$01
-P1_NUM_LIVES:
+; moved to RAM (4-player hack)
+; 4-player hack: $32-$33 now hold the first read of p3/p4 input
+; (see load_controller_state)
+CTRL_PREV_P3:
     .res 1
 
 ; $33 - P2 number of lives, #$00 is last life, on game over stays #$00
 ; but P2_GAME_OVER_STATUS becomes #$01
-P2_NUM_LIVES:
+; moved to RAM (4-player hack)
     .res 1
 
 ; $34 - random number incremented in forever_loop
@@ -298,12 +303,15 @@ INDOOR_SCREEN_CLEARED:
     .res 1
 
 ; $38 - #$00 not game over, #$01 game over
-P1_GAME_OVER_STATUS:
+; moved to RAM (4-player hack)
+; 4-player hack: $38-$39 now hold p3/p4 input being read
+; (see read_controller_state)
+CTRL_READ_P3:
     .res 1
 
 ; $39 - #$00 not game over, #$01 game over or player 2 not playing
 ; (1 player game)
-P2_GAME_OVER_STATUS:
+; moved to RAM (4-player hack)
     .res 1
 
 ; $3a - the number of continues remaining
@@ -630,6 +638,7 @@ ENEMY_ATTACK_FLAG:
 
 .res 1
 
+; player arrays now have 4 entries (p1-p4), indexed by player 0-3
 ; $90
 ; * #$00 falling into the level (only run once to init fall)
 ; * #$01 normal state
@@ -637,55 +646,25 @@ ENEMY_ATTACK_FLAG:
 ; * #$03 can't move
 ; $91 is for p2, if p2 not playing, set to #$00
 PLAYER_STATE:
-    .res 2
-
-; $92 - a variable to store INDOOR_TRANSITION_X_FRACT_VEL being added to itself
-; to account for overflow before adding to player X velocity when moving between
-; screens on indoor/base levels
-; $93 is for p2
-INDOOR_TRANSITION_X_ACCUM:
-    .res 2
-
-; $94 - related to jump height (used by speedrunners to jump higher)
-; * https://www.youtube.com/watch?v=K7MjxHvWof8
-; * https://www.youtube.com/watch?v=yrnW9yQXa9I
-; used to keep track of fractional Y velocity on vertical levels for overflowing
-; fractional velocity
-; notably, this value is not cleared between jumps
-; also used when walking into a screen for indoor screen changes to keep track
-; of overflow of animation Y fractional velocity
-; $95 is for player 2
-PLAYER_JUMP_COEFFICIENT:
-    .res 2
+    .res 4
 
 ; $96 - indoor animation transition when walking into screen X fractional
 ; velocity
 ; $97 is for player 2
 INDOOR_TRANSITION_X_FRACT_VEL:
-    .res 2
+    .res 4
 
 ; $98 - the player's fast X velocity (#$00, #$01, or #$ff)
 ; $99 is for p2
 PLAYER_X_VELOCITY:
-    .res 2
-
-; $9a - indoor animation transition when walking into screen Y fractional
-; velocity
-; $9b is for player 2
-INDOOR_TRANSITION_Y_FRACT_VEL:
-    .res 2
-
-; $9c - indoor animation transition when walking into screen Y fast velocity
-; $9d is for player 2
-INDOOR_TRANSITION_Y_FAST_VEL:
-    .res 2
+    .res 4
 
 ; $9e - value that is incremented every frame when player is walking
 ; used to wait #$08 frames before incrementing PLAYER_ANIMATION_FRAME_INDEX for
 ; animating player walking
 ; $9f is for player 2
 PLAYER_ANIM_FRAME_TIMER:
-    .res 2
+    .res 4
 
 ; $a0 - the status of the player jump (facing direction)
 ; similar to EDGE_FALL_CODE
@@ -694,12 +673,7 @@ PLAYER_ANIM_FRAME_TIMER:
 ; low nibble is #$01 when jumping, #$00 when not
 ; $a1 is for player 2
 PLAYER_JUMP_STATUS:
-    .res 2
-
-; $a2 - how much player 1 is causing the frame to scroll by, see FRAME_SCROLL
-; $a3 is for player 2, larger of the two is set to FRAME_SCROLL
-PLAYER_FRAME_SCROLL:
-    .res 2
+    .res 4
 
 ; $a4 - similar to PLAYER_JUMP_STATUS. used to start gravity pulling player down
 ; if bit 7 is set, then falling through platform
@@ -709,20 +683,13 @@ PLAYER_FRAME_SCROLL:
 ; bit 0 always set when EDGE_FALL_CODE non-zero
 ; $a5 is for player 2
 EDGE_FALL_CODE:
-    .res 2
+    .res 4
 
 ; $a6 - which frame of the player animation. depends on player state.
 ; for example, if the player is running, this cycles from #$00 to #$05
 ; $a7 is for player 2
 PLAYER_ANIMATION_FRAME_INDEX:
-    .res 2
-
-; $a8 - the Y position the player was at when they started walking into the
-; screen after clearing an indoor level.
-; I believe it's always #$a8 since Y position is hard-coded for indoor levels
-; $a9 is for player 2
-PLAYER_INDOOR_ANIM_Y:
-    .res 2
+    .res 4
 
 ; $aa - P1 current weapon and rapid fire flag (commonly abbreviated MFSL)
 ; low nibble is weapon
@@ -734,38 +701,7 @@ PLAYER_INDOOR_ANIM_Y:
 ; * #$04 - Laser
 ; bit 4 set for rapid fire
 P1_CURRENT_WEAPON:
-    .res 1
-
-; $ab - P2 current weapon and rapid fire flag (commonly abbreviated MFSL)
-; low nibble is weapon
-; when high nibble is 1, rapid fire enabled
-; * #$00 - Regular
-; * #$01 - Machine Gun
-; * #$02 - Flame Thrower
-; * #$03 - Spray
-; * #$04 - Laser
-; bit 4 set for rapid fire
-P2_CURRENT_WEAPON:
-    .res 1
-
-; $ac - used when holding down the B button with the M weapon
-; high nibble is the number of bullets generated (up to #$06)
-; low nibble is a counter before the next bullet is generated (up to #$07)
-; $ad is for player 2
-PLAYER_M_WEAPON_FIRE_TIME:
-    .res 2
-
-; $ae - timer for invincibility after dying
-; $af is for player 2
-NEW_LIFE_INVINCIBILITY_TIMER:
-    .res 2
-
-; $b0 - timer for player invincibility (B (barrier) weapon)
-; (decreases every 8 frames)
-; usually set to #$80 except on level 7, where it is set to #$90
-; $b1 is for player 2
-INVINCIBILITY_TIMER:
-    .res 2
+    .res 4
 
 ; $b2 - bit 1 - horizontal sprite flip flag
 ; bit 2 - set when the player is in water, or exiting water
@@ -774,34 +710,13 @@ INVINCIBILITY_TIMER:
 ; bit 7 - player is walking out of water
 ; $b3 is for player 2
 PLAYER_WATER_STATE:
-    .res 2
-
-; $b4
-; * bit 0 specifies whether the player has died
-; * bit 1 specifies whether the player was facing left when hit, used so player
-;   dies lying in the appropriate direction
-; $b5 is for player 2
-PLAYER_DEATH_FLAG:
-    .res 2
-
-; $b6 - whether or not the player is on top of another enemy
-; set for #$14 - mining cart, #$15 - stationary mining cart, and #$10 - floating
-; rock platform
-; $b7 is for player 2
-PLAYER_ON_ENEMY:
-    .res 2
-
-; $b8 - used to prevent changing X velocity shortly after walking off/falling
-; through ledge, set to Y position of ledge + #$14
-; $b9 is for player 2
-PLAYER_FALL_X_FREEZE:
-    .res 2
+    .res 4
 
 ; $ba - #$00 player visible, #$01/#$ff player invisible (any non-zero).
 ; likely tracks how far off screen the player is
 ; $bb is for player 2
 PLAYER_HIDDEN:
-    .res 2
+    .res 4
 
 ; $bc - which animation to show for the player
 ; * outdoor
@@ -819,18 +734,7 @@ PLAYER_HIDDEN:
 ;  * #$06 dead animation
 ; $bd is for player 2
 PLAYER_SPRITE_SEQUENCE:
-    .res 2
-
-; $be - the X position the player was at when they started walking into the
-; screen after clearing an indoor level
-; $bf is for player 2
-PLAYER_INDOOR_ANIM_X:
-    .res 2
-
-; $c0 - backup of PLAYER_AIM_DIR
-; $c1 is for player 2
-PLAYER_AIM_PREV_FRAME:
-    .res 2
+    .res 4
 
 ; $c2 - which direction the player is aiming [#$00-#$0a], depends on level and
 ; jump status (#$00 up facing right, #$01 up-right, #$02 right, #$03 right-down,
@@ -838,64 +742,40 @@ PLAYER_AIM_PREV_FRAME:
 ; there are 2 'up' and 2 'down' values depending on facing direction
 ; $c3 is for player 2
 PLAYER_AIM_DIR:
-    .res 2
+    .res 4
 
 ; $c4 - the fractional portion of the player's Y velocity
 ; $c5 is for player 2
 PLAYER_Y_FRACT_VELOCITY:
-    .res 2
+    .res 4
 
 ; $c6 - the integer portion of the player's Y velocity
 ; positive pulls down, negative pulls up
 ; $c7 is for player 2
 PLAYER_Y_FAST_VELOCITY:
-    .res 2
+    .res 4
 
 ; $c8 - timer for player being electrocuted
 ; used to freeze the player after touching electricity
 ; $c9 is for player 2
 ELECTROCUTED_TIMER:
-    .res 2
-
-; $ca - used when entering a new screen to cause the player to jump
-; $cb is for player 2
-INDOOR_PLAYER_JUMP_FLAG:
-    .res 2
-
-; $cc - timer used for getting into and out of water
-; $cd is for player 2
-PLAYER_WATER_TIMER:
-    .res 2
+    .res 4
 
 ; $ce - how many frames to be pushed back/down from recoil
 ; $cf is for player 2
 PLAYER_RECOIL_TIMER:
-    .res 2
+    .res 4
 
 ; $d0 - whether or not the player is walking into the screen when advancing
 ; between screens on indoor levels, used for animating the player
 ; $d1 is for player 2
 INDOOR_PLAYER_ADV_FLAG:
-    .res 2
-
-; $d2 - used to track the player death animation state
-; for outdoor levels, a timer that increments once the player is hit
-; every #$08 frames updates to the next animation frame until #$04
-; also used to track jumping curl animation (loops from #$00-#$04)
-; $d3 is for player 2
-PLAYER_SPECIAL_SPRITE_TIMER:
-    .res 2
-
-; $d4 - the X fast velocity boost from landing on a non-dangerous enemy
-; e.g. moving cart or floating rock in the vertical level
-; $d5 is for player 2
-PLAYER_FAST_X_VEL_BOOST:
-    .res 2
+    .res 4
 
 ; $d6 - sprite code of the player
 ; $d7 is for player 2
 PLAYER_SPRITE_CODE:
-    .res 2
+    .res 4
 
 ; $d8 - stores player sprite horizontal (bit 6) and vertical (bit 7) flip flags
 ; before saving into SPRITE_ATTR
@@ -903,16 +783,9 @@ PLAYER_SPRITE_CODE:
 ; (see @check_anim_frame_and_collision)
 ; $d9 is for player 2
 PLAYER_SPRITE_FLIP:
-    .res 2
+    .res 4
 
-; $da - bit 7 specifies the player's sprite attribute for background priority,
-; allows a player to walk behind opaque background (OAM byte 2 bit 5)
-; 0 (clear) sprite in foreground, 1 (set) sprite in background
-; bit 0 allows the player to keep walking horizontally off a ledge without
-; falling
-; $db is for player 2
-PLAYER_BG_FLAG_EDGE_DETECT:
-    .res 2
+P2_CURRENT_WEAPON = P1_CURRENT_WEAPON + 1
 
 .res 3
 
@@ -935,7 +808,7 @@ SOUND_TABLE_PTR:
 ; bit 7 - A, bit 6 - B, bit 5 - select, bit 4 - start
 ; bit 3 - up, bit 2 - down, bit 1 - left, bit 0 - right
 ; $f2 - stores the currently-pressed buttons for player 2
-CONTROLLER_STATE:
+; moved to RAM (4-player hack)
     .res 2
 
 ; $f3
@@ -944,7 +817,9 @@ CONTROLLER_STATE:
 ; $f5 - stores the change in controller input between reads
 ; useful for events that should only trigger on the first button press
 ; $f6 is for player 2
-CONTROLLER_STATE_DIFF:
+; moved to RAM (4-player hack)
+; 4-player hack: $f5-$f6 now hold the Four Score signature bytes for port 1/2
+CTRL_SIGNATURE:
     .res 2
 
 .res 2
@@ -952,7 +827,7 @@ CONTROLLER_STATE_DIFF:
 ; $f9 - used in input-reading code to know the last known valid read of
 ; controller input (similar to CONTROLLER_STATE)
 ; $fa is for player 2
-CTRL_KNOWN_GOOD:
+; moved to RAM (4-player hack)
     .res 2
 
 ; unused
@@ -1284,7 +1159,20 @@ VIBRATO_DELAY:
 VIBRATO_AMOUNT:
     .res 2
 
-.res 14
+; 4-player hack: LEVEL_END_LVL_ROUTINE_STATE moved here (4 entries)
+LEVEL_END_LVL_ROUTINE_STATE:
+    .res 4
+; temporaries for closest_extra_player_x/y (best distance, best player index)
+CLOSEST_DIST:
+    .res 1
+CLOSEST_IDX:
+    .res 1
+
+; score needed for the next extra life, low/high byte pairs for p1-p4
+; (replaces EXTRA_LIFE_SCORE_LOW/HIGH, whose p2 high byte was shared with
+; KONAMI_CODE_NUM_CORRECT and had no room for p3/p4)
+EXTRA_LIFE_SCORE_4P:
+    .res 8
 
 ; $0190 - a delay timer before beginning level end animation sequence
 LEVEL_END_DELAY_TIMER:
@@ -1300,7 +1188,7 @@ LEVEL_END_SQ_1_TIMER:
 ; for example, indoor level end animations have 4 states: walk to elevator,
 ; wait for other player, initialize elevator sprite, ride elevator
 ; $0193 is for player 2
-LEVEL_END_LVL_ROUTINE_STATE:
+; moved to $0182 (4-player hack)
     .res 2
 
 ; $0194 - the number of players alive at the end of the level, used to know
@@ -1682,7 +1570,186 @@ BG_COLLISION_DATA:
 CPU_GRAPHICS_BUFFER:
     .res 80
 
-.res 112
+; 4-player hack: guard bytes, CPU_GRAPHICS_BUFFER can be written past its #$50 bytes
+; (e.g. stage screen with 4 players' REST/GAME OVER text), originally this was unused RAM
+.res 15
+
+; $075f - 4-player hack: player arrays moved out of zero page (4 entries each)
+; cleared together with zero page player data (see clear_memory_starting_at_x)
+PLAYER_ABS_RAM:
+
+
+; $92 - a variable to store INDOOR_TRANSITION_X_FRACT_VEL being added to itself
+; to account for overflow before adding to player X velocity when moving between
+; screens on indoor/base levels
+; $93 is for p2
+INDOOR_TRANSITION_X_ACCUM:
+    .res 4
+
+
+; $94 - related to jump height (used by speedrunners to jump higher)
+; * https://www.youtube.com/watch?v=K7MjxHvWof8
+; * https://www.youtube.com/watch?v=yrnW9yQXa9I
+; used to keep track of fractional Y velocity on vertical levels for overflowing
+; fractional velocity
+; notably, this value is not cleared between jumps
+; also used when walking into a screen for indoor screen changes to keep track
+; of overflow of animation Y fractional velocity
+; $95 is for player 2
+PLAYER_JUMP_COEFFICIENT:
+    .res 4
+
+
+; $9a - indoor animation transition when walking into screen Y fractional
+; velocity
+; $9b is for player 2
+INDOOR_TRANSITION_Y_FRACT_VEL:
+    .res 4
+
+
+; $9c - indoor animation transition when walking into screen Y fast velocity
+; $9d is for player 2
+INDOOR_TRANSITION_Y_FAST_VEL:
+    .res 4
+
+
+; $a2 - how much player 1 is causing the frame to scroll by, see FRAME_SCROLL
+; $a3 is for player 2, larger of the two is set to FRAME_SCROLL
+PLAYER_FRAME_SCROLL:
+    .res 4
+
+
+; $a8 - the Y position the player was at when they started walking into the
+; screen after clearing an indoor level.
+; I believe it's always #$a8 since Y position is hard-coded for indoor levels
+; $a9 is for player 2
+PLAYER_INDOOR_ANIM_Y:
+    .res 4
+
+
+; $ac - used when holding down the B button with the M weapon
+; high nibble is the number of bullets generated (up to #$06)
+; low nibble is a counter before the next bullet is generated (up to #$07)
+; $ad is for player 2
+PLAYER_M_WEAPON_FIRE_TIME:
+    .res 4
+
+
+; $ae - timer for invincibility after dying
+; $af is for player 2
+NEW_LIFE_INVINCIBILITY_TIMER:
+    .res 4
+
+
+; $b0 - timer for player invincibility (B (barrier) weapon)
+; (decreases every 8 frames)
+; usually set to #$80 except on level 7, where it is set to #$90
+; $b1 is for player 2
+INVINCIBILITY_TIMER:
+    .res 4
+
+
+; $b4
+; * bit 0 specifies whether the player has died
+; * bit 1 specifies whether the player was facing left when hit, used so player
+;   dies lying in the appropriate direction
+; $b5 is for player 2
+PLAYER_DEATH_FLAG:
+    .res 4
+
+
+; $b6 - whether or not the player is on top of another enemy
+; set for #$14 - mining cart, #$15 - stationary mining cart, and #$10 - floating
+; rock platform
+; $b7 is for player 2
+PLAYER_ON_ENEMY:
+    .res 4
+
+
+; $b8 - used to prevent changing X velocity shortly after walking off/falling
+; through ledge, set to Y position of ledge + #$14
+; $b9 is for player 2
+PLAYER_FALL_X_FREEZE:
+    .res 4
+
+
+; $be - the X position the player was at when they started walking into the
+; screen after clearing an indoor level
+; $bf is for player 2
+PLAYER_INDOOR_ANIM_X:
+    .res 4
+
+
+; $c0 - backup of PLAYER_AIM_DIR
+; $c1 is for player 2
+PLAYER_AIM_PREV_FRAME:
+    .res 4
+
+
+; $ca - used when entering a new screen to cause the player to jump
+; $cb is for player 2
+INDOOR_PLAYER_JUMP_FLAG:
+    .res 4
+
+
+; $cc - timer used for getting into and out of water
+; $cd is for player 2
+PLAYER_WATER_TIMER:
+    .res 4
+
+
+; $d2 - used to track the player death animation state
+; for outdoor levels, a timer that increments once the player is hit
+; every #$08 frames updates to the next animation frame until #$04
+; also used to track jumping curl animation (loops from #$00-#$04)
+; $d3 is for player 2
+PLAYER_SPECIAL_SPRITE_TIMER:
+    .res 4
+
+
+; $d4 - the X fast velocity boost from landing on a non-dangerous enemy
+; e.g. moving cart or floating rock in the vertical level
+; $d5 is for player 2
+PLAYER_FAST_X_VEL_BOOST:
+    .res 4
+
+
+; $da - bit 7 specifies the player's sprite attribute for background priority,
+; allows a player to walk behind opaque background (OAM byte 2 bit 5)
+; 0 (clear) sprite in foreground, 1 (set) sprite in background
+; bit 0 allows the player to keep walking horizontally off a ledge without
+; falling
+; $db is for player 2
+PLAYER_BG_FLAG_EDGE_DETECT:
+    .res 4
+PLAYER_ABS_RAM_END:
+
+; 4-player hack: per-player values moved from zero page (4 entries each)
+P1_NUM_LIVES:
+    .res 4
+P2_NUM_LIVES = P1_NUM_LIVES + 1
+
+P1_GAME_OVER_STATUS:
+    .res 4
+P2_GAME_OVER_STATUS = P1_GAME_OVER_STATUS + 1
+
+CONTROLLER_STATE:
+    .res 4
+
+CONTROLLER_STATE_DIFF:
+    .res 4
+
+CTRL_KNOWN_GOOD:
+    .res 4
+
+; highest player index to loop over: #$01 for 1 or 2 players (as the original
+; game always loops both), #$02 for 3 players, #$03 for 4 players
+MAX_PLAYER_INDEX:
+    .res 1
+
+
+NUM_PLAYERS_HACK_END:
+
 
 ; $07c0 - [$07c0-$07df] the CPU memory buffer for the palettes eventually loaded
 ; into the PPU $3f00 to $3f1f
@@ -1723,3 +1790,19 @@ PREVIOUS_ROM_BANK:
 ; (from play_sound)
 PREVIOUS_ROM_BANK_1:
     .res 1
+; 4-player hack: during the attract demo nothing scores, so the p3/p4 score bytes
+; ($07e6-$07e9) and the 2 free bytes after them hold the p3/p4 demo input state
+; (reset_players_score clears the scores when a real game starts)
+DEMO_P34_NUM_FRAMES = PLAYER_1_SCORE_LOW + 4
+DEMO_P34_INPUT_VAL = PLAYER_1_SCORE_LOW + 6
+DEMO_P34_TBL_INDEX = PLAYER_1_SCORE_LOW + 8
+
+; 4-player hack: frames left in a heavy period after a lag frame, while non-zero sprites are only redrawn every other frame (3-4 players)
+; $07ee is outside the RAM segment, unused by the original game (boot doesn't clear it)
+LAG_SKIP_SPRITES = $07ee
+.export DEMO_P34_NUM_FRAMES, DEMO_P34_INPUT_VAL, DEMO_P34_TBL_INDEX, LAG_SKIP_SPRITES
+
+; 4-player hack: catch accidental shifts of the original RAM layout
+.assert PALETTE_CPU_BUFFER = $07c0, error, "RAM layout shifted"
+.assert PREVIOUS_ROM_BANK = $07ec, error, "RAM layout shifted"
+.assert PLAYER_GAME_OVER_BIT_FIELD = $df, error, "zero page layout shifted"

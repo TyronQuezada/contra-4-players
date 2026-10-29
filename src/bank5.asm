@@ -173,11 +173,75 @@ set_player_demo_input:
 player_demo_input_chg_player:
     dex                       ; go from player 2 to player 1
     bpl set_player_demo_input ; loop back for player 1, exit when done
-    rts                       ; done with both players
+    jmp set_p3_p4_demo_input  ; 4-player hack
 
 ; finished reading all of demo data, end demo for level
 end_demo_level:
     inc DEMO_LEVEL_END_FLAG ; set demo end flag to #$01
+    rts
+
+; 4-player hack: there is no recorded demo input for p3/p4, so p3 replays p1's
+; recording and p4 replays p2's, both delayed (see set_next_demo_level) so they
+; don't overlap the player they copy
+set_p3_p4_demo_input:
+    ldx #$03
+
+@player_loop:
+    lda FRAME_COUNTER
+    lsr
+    bcc @apply_input                   ; inputs advance on odd frames, like set_player_demo_input
+    lda DEMO_P34_NUM_FRAMES-2,x
+    bne @dec_input_frame_count
+    lda CURRENT_LEVEL
+    asl
+    asl
+    sta $08                            ; demo_input_pointer_table offset for the level
+    txa
+    sec
+    sbc #$02                           ; recording to replay: p1 for p3, p2 for p4
+    asl
+    adc $08
+    tay
+    lda demo_input_pointer_table,y
+    sta $08
+    lda demo_input_pointer_table+1,y
+    sta $09
+    ldy DEMO_P34_TBL_INDEX-2,x
+    lda ($08),y
+    cmp #$ff
+    beq @apply_input                   ; end of recording, keep last input (p1/p2 end the demo)
+    sta DEMO_P34_INPUT_VAL-2,x
+    iny
+    lda ($08),y
+    sta DEMO_P34_NUM_FRAMES-2,x
+    iny
+    tya
+    sta DEMO_P34_TBL_INDEX-2,x
+
+@dec_input_frame_count:
+    dec DEMO_P34_NUM_FRAMES-2,x
+
+@apply_input:
+    lda DEMO_P34_INPUT_VAL-2,x
+    sta CONTROLLER_STATE_DIFF,x
+    sta CONTROLLER_STATE,x
+    lda DEMO_FIRE_DELAY_TIMER
+    cmp #$50
+    bcc @next_player                   ; wait #$50 frames before firing weapon
+                                       ; p3/p4 tap fire every #$20 frames whatever the weapon (no held M/L)
+                                       ; so 4 players firing don't slow the demo down
+@tap_fire:
+    lda FRAME_COUNTER
+    and #$1f
+    bne @next_player
+    lda CONTROLLER_STATE_DIFF,x
+    ora #$40                           ; press b button every #$20 frames
+    sta CONTROLLER_STATE_DIFF,x
+
+@next_player:
+    dex
+    cpx #$02
+    bcs @player_loop
     rts
 
 ; pointer table for demo inputs #$06 * #$02 = #$0c bytes

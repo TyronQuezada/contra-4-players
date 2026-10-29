@@ -1245,7 +1245,7 @@ end_level_sequence_ptr_tbl:
 end_level_sequence_00:
     lda #$00 ; a = #$00
     sta $08  ; initialize jump status check
-    ldx #$01 ; start with player 2
+    ldx MAX_PLAYER_INDEX ; start with last player
 
 @player_loop:
     lda #$00                  ; a = #$00
@@ -1281,7 +1281,7 @@ end_level_sequence_01:
     rts
 
 @continue:
-    ldx #$01 ; x = #$01
+    ldx MAX_PLAYER_INDEX ; start with last player
 
 @player_lvl_routine_loop:
     ldy LEVEL_END_LVL_ROUTINE_STATE,x
@@ -1303,6 +1303,8 @@ end_level_sequence_01:
 @set_state_exit:
     lda LEVEL_END_LVL_ROUTINE_STATE
     ora LEVEL_END_LVL_ROUTINE_STATE+1 ; merge with player 2 value
+    ora LEVEL_END_LVL_ROUTINE_STATE+2 ; 4-player hack: p3 and p4
+    ora LEVEL_END_LVL_ROUTINE_STATE+3
     bne end_level_sequence_01_exit    ; exit if either player routine state is non-zero
 
 @set_level_delay_adv_routine:
@@ -1420,16 +1422,25 @@ end_of_lvl_routine_indoor_01:
 end_of_lvl_routine_indoor_02:
     dey                                       ; test next LEVEL_END_LVL_ROUTINE_STATE
     bne end_of_lvl_routine_indoor_03          ; branch if not in state #$02
-    stx $10                                   ; state #$02, see which LEVEL_END_LVL_ROUTINE_STATE the other player is in, backup current x
-    txa                                       ; move x to a so can flip bit 0
-    eor #$01                                  ; swap to other player's state
-    tax                                       ; move other player offset to x
+    stx $10                                   ; state #$02, see which LEVEL_END_LVL_ROUTINE_STATE the other players are in, backup current x
+    ldx MAX_PLAYER_INDEX                      ; 4-player hack: wait for every other player
+
+@other_player_loop:
+    cpx $10
+    beq @next_other_player
     lda LEVEL_END_LVL_ROUTINE_STATE,x         ; load other player's LEVEL_END_LVL_ROUTINE_STATE
-    ldx $10                                   ; restore player offset back to original player
-    tay                                       ; move other player LEVEL_END_LVL_ROUTINE_STATE to y
-    beq routine_indoor_lvl_adv_lvl_state_exit ; branch if other player is in state #$00, i.e. player 2 not playing
+    beq @next_other_player                    ; other player is in state #$00, i.e. not playing
     cmp #$03                                  ; compare other player's state to #$03
-    bcs routine_indoor_lvl_adv_lvl_state_exit ; branch and move to state #$03 if other player is also on elevator (in state #$02)
+    bcc @wait_other_player                    ; other player not yet on elevator
+
+@next_other_player:
+    dex
+    bpl @other_player_loop
+    ldx $10                                   ; restore player offset back to original player
+    jmp routine_indoor_lvl_adv_lvl_state_exit ; every other player is on elevator (or not playing)
+
+@wait_other_player:
+    ldx $10                                   ; restore player offset back to original player
     rts
 
 ; ride the elevator up
@@ -1572,17 +1583,17 @@ end_level_sequence_02_exit:
 ; player 2 walks to the right elevator - d-pad right (#$01)
 ; controller input - player 1/2 (#$02 bytes)
 indoor_lvl_end_input_tbl:
-    .byte $02,$01
+    .byte $02,$01,$02,$01 ; 4-player hack: p3 left like p1, p4 right like p2
 
 ; X position for elevator (#$02 bytes)
 indoor_lvl_elevator_pos_tbl:
-    .byte $0c,$f4
+    .byte $0c,$f4,$0c,$f4
 
 ; table for sprite attribute for being on elevator (#$02 bytes)
 ; sprite_91 - indoor boss defeated elevator with player on top
 ; byte 0 is for player 1, byte 1 is for player 2
 indoor_lvl_elevator_attr_tbl:
-    .byte $00,$45
+    .byte $00,$45,$04,$41 ; 4-player hack: p3 all palette 0, p4 swapped palettes (see draw_sprites)
 
 ; unused #$51 bytes out of #$4000 bytes total (99.51% full)
 ; unused 81 bytes out of 16,384 bytes total (99.51% full)
