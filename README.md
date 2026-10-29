@@ -39,10 +39,25 @@ at the same time**, using the NES Four Score adapter:
    [Rom Patcher JS](https://www.marcrobledo.com/RomPatcher.js/) (works in the browser) or Floating IPS.
    - Expected ROM: Contra (USA), CRC32 `F6035030` (without the 16-byte header).
    - Works with iNES and NES 2.0 headers.
-3. Open the patched ROM in an emulator with **Four Score** support and enable it:
-   - **FCEUX**: *Config → Input →* tick **Attach four-score**, then configure gamepads 1-4.
-   - **Mesen / Nestopia**: enable the **Four Score** (4-player adapter) in the input settings.
+3. Open the patched ROM in an emulator with **Four Score** support and enable it (see the table below).
 4. On the title screen press **SELECT** until you see **4 PLAYERS** and press **START**.
+
+### Setting up 4 players in each emulator
+
+The hack is not in the emulators' game databases, so **auto-detection will not turn the Four Score
+on: select it by hand**. Players 3 and 4 can use extra gamepads (Xbox, PlayStation, generic USB)
+or two parts of the keyboard.
+
+| Emulator | How to enable 4 players |
+|---|---|
+| **FCEUX** (Windows/Linux) | *Config → Input*: tick **Attach four-score**, keep *Port 1* and *Port 2* on **Gamepad**, then press *Configure* on gamepads 1-4. |
+| **Mesen 2** (Windows/Linux/macOS) | *Settings → Input → NES*: set the controller setup to the **Four Score** (four player adapter) and map players 1-4. |
+| **Nestopia UE** | In the input settings choose the **NES Four Score** adapter (not "Famicom 4-player") and map controllers 1-4. |
+| **puNES** | *Settings → Input*: set the controllers mode to **Four Score** and configure ports 1-4. |
+| **RetroArch** (PC, Android, consoles) | Use the **Mesen**, **Nestopia** or **FCEUmm** core (*QuickNES does not support 4 players*). In *Quick Menu → Core Options* turn on the 4-player / Four Score adapter (Nestopia: *4 Player Adapter → NTSC*), then in *Settings → Input* assign *Port 1-4 Controls*. |
+
+On real hardware the hack follows the original Four Score protocol (switch on **4**), but it has
+only been tested in emulators.
 
 Controls are the original ones: **B** fires, **A** jumps, **START** (player 1) pauses.
 
@@ -96,10 +111,25 @@ cuatro jugadores a la vez**, usando el adaptador Four Score de NES:
    [Rom Patcher JS](https://www.marcrobledo.com/RomPatcher.js/) (funciona en el navegador) o Floating IPS.
    - ROM esperada: Contra (USA), CRC32 `F6035030` (sin la cabecera de 16 bytes).
    - Funciona con cabecera iNES y NES 2.0.
-3. Abre la ROM parcheada en un emulador con soporte de **Four Score** y actívalo:
-   - **FCEUX**: *Config → Input →* marca **Attach four-score** y configura los mandos 1-4.
-   - **Mesen / Nestopia**: activa el **Four Score** (adaptador de 4 jugadores) en la configuración de controles.
+3. Abre la ROM parcheada en un emulador con soporte de **Four Score** y actívalo (ver la tabla).
 4. En el título pulsa **SELECT** hasta ver **4 PLAYERS** y pulsa **START**.
+
+#### Configurar 4 jugadores en cada emulador
+
+El hack no está en las bases de datos de los emuladores, así que **la detección automática no
+activa el Four Score: elígelo a mano**. Los jugadores 3 y 4 pueden usar mandos extra (Xbox,
+PlayStation, USB genéricos) o dos zonas del teclado.
+
+| Emulador | Cómo activar 4 jugadores |
+|---|---|
+| **FCEUX** (Windows/Linux) | *Config → Input*: marca **Attach four-score**, deja *Port 1* y *Port 2* en **Gamepad** y pulsa *Configure* en los mandos 1-4. |
+| **Mesen 2** (Windows/Linux/macOS) | *Settings → Input → NES*: elige el adaptador **Four Score** (four player adapter) y asigna los jugadores 1-4. |
+| **Nestopia UE** | En la configuración de controles elige el adaptador **NES Four Score** (no "Famicom 4-player") y asigna los mandos 1-4. |
+| **puNES** | *Settings → Input*: pon el modo de mandos en **Four Score** y configura los puertos 1-4. |
+| **RetroArch** (PC, Android, consolas) | Usa el núcleo **Mesen**, **Nestopia** o **FCEUmm** (*QuickNES no admite 4 jugadores*). En *Quick Menu → Core Options* activa el adaptador de 4 jugadores / Four Score (Nestopia: *4 Player Adapter → NTSC*) y en *Settings → Input* asigna *Port 1-4 Controls*. |
+
+En una NES real el hack sigue el protocolo del Four Score original (interruptor en **4**), pero solo
+se ha probado en emuladores.
 
 Controles originales: **B** dispara, **A** salta y **START** (jugador 1) pausa.
 
